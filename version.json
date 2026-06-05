@@ -1,6 +1,6 @@
 {
-  "versionCode": 2,
-  "versionName": "1.1",
+  "versionCode": 3,
+  "versionName": "1.2",
   "apkUrl": "https://github.com/starbrightlab/immortal/releases/latest/download/immortal.apk",
-  "notes": "Immortal 1.1 — App Store now loads reliably (offline-first catalog), and the built-in Calls and App Store tiles have crisp new icons."
+  "notes": "Immortal 1.2 — the Updates tile now lives at the end of the grid and is always available for a manual check; updates are detected promptly (periodic checks + cache-busted manifest fetch)."
 }

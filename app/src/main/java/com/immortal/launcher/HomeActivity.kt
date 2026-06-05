@@ -302,7 +302,15 @@ private fun LauncherScreen(
   var pendingConfirm by remember { mutableStateOf<Intent?>(null) }
   val confirmLauncher =
       rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {}
-  LaunchedEffect(Unit) { UpdateManager.checkForUpdate(context) { update = it } }
+  // Check on launch, then periodically while the launcher runs (it's the
+  // long-lived home, so a one-shot check would go stale). The Updates tile also
+  // lets the user force a check at any time.
+  LaunchedEffect(Unit) {
+    while (true) {
+      UpdateManager.checkForUpdate(context) { update = it }
+      delay(UPDATE_CHECK_INTERVAL_MS)
+    }
+  }
   LaunchedEffect(pendingConfirm) {
     pendingConfirm?.let {
       confirmLauncher.launch(it)
@@ -389,13 +397,6 @@ private fun LauncherScreen(
         ) {
           // Special + folder tiles persist in Manage mode (non-uninstallable);
           // only regular apps get a delete badge and become draggable.
-          update?.let { info ->
-            item {
-              UpdateTile(updateStatus) {
-                UpdateManager.installUpdate(context, info) { updateStatus = it }
-              }
-            }
-          }
           item { PortalHomeTile(onExitHome) }
           item { StoreTile(onOpenStore) }
           items(folderNames, key = { it }) { name ->
@@ -422,6 +423,22 @@ private fun LauncherScreen(
                 onDelete = { onUninstall(pkg) },
                 onClick = { onLaunch(app.component) },
             )
+          }
+          // Always-present Updates tile, parked at the end of the grid. Tapping
+          // installs a ready update, or forces a fresh check when up to date.
+          item {
+            UpdatesTile(update = update, status = updateStatus) {
+              val info = update
+              if (info != null) {
+                UpdateManager.installUpdate(context, info) { updateStatus = it }
+              } else {
+                updateStatus = "Checking…"
+                UpdateManager.checkForUpdate(context) {
+                  update = it
+                  updateStatus = if (it == null) "Up to date" else null
+                }
+              }
+            }
           }
         }
       }
@@ -505,6 +522,7 @@ private fun LauncherScreen(
 
 private const val APP_KEY = "app:"
 private const val FOLDER_KEY = "folder:"
+private const val UPDATE_CHECK_INTERVAL_MS = 6L * 60 * 60 * 1000 // 6 hours
 
 @Composable
 private fun HeaderBar(onScreensaver: () -> Unit) {
@@ -715,6 +733,8 @@ private fun PortalHomeTile(onClick: () -> Unit) {
 private const val ICON_CALL =
     "M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"
 private const val ICON_DOWNLOAD = "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"
+private const val ICON_REFRESH =
+    "M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"
 
 /** A built-in launcher tile: a rounded colour tile with a centered white vector
  * glyph, styled to sit naturally beside real app icons. */
@@ -981,24 +1001,44 @@ private fun NameOverlay(
   }
 }
 
+/** Always-present Updates tile. Neutral + refresh glyph when up to date; blue +
+ * download glyph (with a badge) when an update is ready. Shows transient status
+ * text during a check or install. */
 @Composable
-private fun UpdateTile(status: String?, onClick: () -> Unit) {
+private fun UpdatesTile(update: UpdateInfo?, status: String?, onClick: () -> Unit) {
+  val available = update != null
+  val label = status ?: if (available) "Update ready" else "Up to date"
+  val background = if (available) Color(0xFF2D6CDF) else Color(0xFF2B2B2B)
+  val glyph = if (available) ICON_DOWNLOAD else ICON_REFRESH
+  val path = remember(glyph) { PathParser().parsePathString(glyph).toPath() }
   Column(
       horizontalAlignment = Alignment.CenterHorizontally,
       modifier = Modifier.clickable { onClick() }.padding(4.dp),
   ) {
-    Surface(
-        color = MaterialTheme.colorScheme.primary,
-        shape = RoundedCornerShape(20.dp),
-        modifier = Modifier.size(88.dp),
-    ) {
-      Box(contentAlignment = Alignment.Center) {
-        Text("↑", color = Color.White, fontSize = 44.sp)
+    Box {
+      Surface(
+          color = background,
+          shape = RoundedCornerShape(20.dp),
+          modifier = Modifier.size(88.dp),
+      ) {
+        Box(contentAlignment = Alignment.Center) {
+          Canvas(Modifier.size(44.dp)) {
+            val s = size.minDimension / 24f
+            scale(s, s, pivot = Offset.Zero) { drawPath(path, Color.White) }
+          }
+        }
+      }
+      if (available) {
+        Surface(
+            color = Color(0xFFE53935),
+            shape = androidx.compose.foundation.shape.CircleShape,
+            modifier = Modifier.size(18.dp).align(Alignment.TopEnd),
+        ) {}
       }
     }
     Spacer(Modifier.size(8.dp))
     Text(
-        status ?: "Update",
+        label,
         color = Color.White,
         fontSize = 15.sp,
         maxLines = 1,
