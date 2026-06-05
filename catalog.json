@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "updated": "2026-06-04",
+  "note": "Portal app catalog. Host this file on a public URL (e.g. GitHub raw) and point the store's CATALOG_URL at it. Entries with source 'fdroid' resolve the current APK at install time via the F-Droid API, so they never go stale. Entries with source 'url' use a direct apkUrl (use this for your own custom Portal apps). Multi-ABI apps (e.g. VLC) ship separate per-architecture APKs on F-Droid; pin the arm64-v8a build with 'versionCode' since Portal is arm64.",
+  "categories": [
+    {
+      "name": "Media & Entertainment",
+      "apps": [
+        { "name": "VLC", "packageName": "org.videolan.vlc", "source": "fdroid", "fdroidId": "org.videolan.vlc", "versionCode": 13070106, "minSdk": 21, "description": "Plays virtually any video or audio file or network stream." },
+        { "name": "Jellyfin", "packageName": "org.jellyfin.mobile", "source": "fdroid", "fdroidId": "org.jellyfin.mobile", "minSdk": 21, "description": "Client for your own Jellyfin media server — movies, shows, music." },
+        { "name": "NewPipe", "packageName": "org.schabi.newpipe", "source": "fdroid", "fdroidId": "org.schabi.newpipe", "minSdk": 21, "description": "Lightweight YouTube front-end with background play. No Google account." },
+        { "name": "SmartTube", "packageName": "app.smarttube.fdroid", "source": "fdroid", "fdroidId": "app.smarttube.fdroid", "minSdk": 21, "description": "Ad-free YouTube built for the big screen — ideal for Portal TV." },
+        { "name": "AntennaPod", "packageName": "de.danoeh.antennapod", "source": "fdroid", "fdroidId": "de.danoeh.antennapod", "minSdk": 19, "description": "Full-featured podcast manager and player." },
+        { "name": "Transistor", "packageName": "org.y20k.transistor", "source": "fdroid", "fdroidId": "org.y20k.transistor", "minSdk": 25, "description": "Simple internet radio — add stations by stream URL." }
+      ]
+    },
+    {
+      "name": "Smart Home & Ambient",
+      "apps": [
+        { "name": "Home Assistant", "packageName": "io.homeassistant.companion.android.minimal", "source": "fdroid", "fdroidId": "io.homeassistant.companion.android.minimal", "minSdk": 21, "description": "Control your smart home dashboard. No-GMS minimal build." },
+        { "name": "Breezy Weather", "packageName": "org.breezyweather", "source": "fdroid", "fdroidId": "org.breezyweather", "minSdk": 21, "description": "Clean, detailed weather with multiple data sources." }
+      ]
+    },
+    {
+      "name": "Productivity",
+      "apps": [
+        { "name": "Tasks.org", "packageName": "org.tasks", "source": "fdroid", "fdroidId": "org.tasks", "minSdk": 23, "description": "To-do lists and reminders with optional sync." },
+        { "name": "Markor", "packageName": "net.gsantner.markor", "source": "fdroid", "fdroidId": "net.gsantner.markor", "minSdk": 18, "description": "Fast, offline notes and to-do in plain text / Markdown." },
+        { "name": "Feeder", "packageName": "com.nononsenseapps.feeder", "source": "fdroid", "fdroidId": "com.nononsenseapps.feeder", "minSdk": 23, "description": "A clean RSS reader — turn the Portal into a news board." },
+        { "name": "Fossify Calendar", "packageName": "org.fossify.calendar", "source": "fdroid", "fdroidId": "org.fossify.calendar", "minSdk": 23, "description": "Private, offline calendar and agenda." }
+      ]
+    },
+    {
+      "name": "Utilities & Power Tools",
+      "apps": [
+        { "name": "Aurora Store", "packageName": "com.aurora.store", "source": "fdroid", "fdroidId": "com.aurora.store", "minSdk": 21, "description": "Install Play Store apps anonymously — no Google account or GMS." },
+        { "name": "Material Files", "packageName": "me.zhanghai.android.files", "source": "fdroid", "fdroidId": "me.zhanghai.android.files", "minSdk": 21, "description": "A clean, capable file manager." },
+        { "name": "Fossify Gallery", "packageName": "org.fossify.gallery", "source": "fdroid", "fdroidId": "org.fossify.gallery", "minSdk": 23, "description": "Browse local photos and videos, no ads." },
+        { "name": "Termux", "packageName": "com.termux", "source": "fdroid", "fdroidId": "com.termux", "minSdk": 24, "description": "A full Linux terminal environment on the device." }
+      ]
+    },
+    {
+      "name": "Portal Originals",
+      "apps": [
+        { "name": "Immortal", "packageName": "com.immortal.launcher", "source": "url", "apkUrl": "https://github.com/starbrightlab/immortal/releases/latest/download/immortal.apk", "minSdk": 24, "description": "The Immortal launcher, screensaver, and app store — the project itself." }
+      ]
+    }
+  ]
+}

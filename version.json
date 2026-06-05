@@ -1,0 +1,6 @@
+{
+  "versionCode": 1,
+  "versionName": "1.0",
+  "apkUrl": "https://github.com/starbrightlab/immortal/releases/latest/download/immortal.apk",
+  "notes": "Immortal 1.0 — custom Portal launcher, photo-frame screensaver, and on-device app store. Devices self-update by polling this manifest: bump versionCode + versionName each release and attach the new signed APK as immortal.apk on the GitHub release."
+}

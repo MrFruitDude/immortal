@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Copyright (c) Meta Platforms, Inc. and affiliates.
+     This source code is licensed under the MIT license found in the
+     LICENSE file in the root directory of this source tree. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Store: install and remove apps on-device via PackageInstaller. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+    <!-- Self-healing: reaffirm our screensaver settings if something resets them.
+         Not granted at install (privileged); provisioning grants it via
+         `pm grant ... WRITE_SECURE_SETTINGS`. Harmless no-op if not granted. -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <application
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
+        android:theme="@style/Theme.SampleApp">
+
+        <!-- Immortal launcher. Opens like any app from the stock home (LAUNCHER
+             filter), and is ALSO eligible as the system home (HOME filter) for
+             the optional `cmd package set-home-activity` step. Its "Portal Home"
+             tile returns to the stock launcher, so nothing is hijacked. -->
+        <activity
+            android:name=".HomeActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.SampleApp">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- App Store, launched from the launcher tile. -->
+        <activity
+            android:name=".StoreActivity"
+            android:exported="true"
+            android:label="App Store"
+            android:theme="@style/Theme.SampleApp" />
+
+        <!-- Full-screen photo frame, launched from the Screensaver tile. -->
+        <activity
+            android:name=".PhotoFramePreviewActivity"
+            android:exported="true"
+            android:theme="@style/Theme.SampleApp" />
+
+        <!-- Reaffirm our screensaver settings after boot (self-healing). -->
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Custom screensaver (Dream), set via secure setting screensaver_components. -->
+        <service
+            android:name=".PhotoDreamService"
+            android:exported="true"
+            android:permission="android.permission.BIND_DREAM_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.dreams.DreamService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
+    </application>
+
+</manifest>

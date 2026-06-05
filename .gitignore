@@ -1,0 +1,25 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Release signing — NEVER commit these. Back them up securely; the same key must
+# sign every Immortal release for in-place self-update to work.
+keystore.properties
+*.jks
+*.keystore
+
+# Built APKs / staged release artifacts and scratch screenshots.
+provisioning/apks/*.apk
+_chk*.png
