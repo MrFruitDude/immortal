@@ -28,6 +28,7 @@ object Curation {
           "com.facebook.alohaservices.abilitymanager", // internal, no icon
           "com.facebook.aloha.app.cameraeditor", // avatar/debug camera, dead/gated
           "com.android.camera2", // stock camera crashes from our launch → bridge
+          "com.facebook.alohasdk.ctsintentabsorber", // Android CTS test app, not user-facing
       )
 
   /** Hidden by visible label (catches gated apps that share a package). */

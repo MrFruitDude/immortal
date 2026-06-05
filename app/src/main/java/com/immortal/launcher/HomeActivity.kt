@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -36,6 +37,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -344,7 +346,16 @@ private fun LauncherScreen(
   Box(modifier = Modifier.fillMaxSize().background(Color(0xFF1A1A1A))) {
     Column(
         modifier =
-            Modifier.fillMaxSize()
+            Modifier.fillMaxHeight()
+                // Cap the content width and center it so the grid stays
+                // comfortably sized on large displays (e.g. Portal+ 1920px)
+                // instead of stretching 6 columns across the whole panel. On the
+                // smaller models this is effectively full-width (unchanged).
+                // (widthIn must precede fillMaxWidth so the cap wins, then align
+                // centers the capped content.)
+                .align(Alignment.TopCenter)
+                .widthIn(max = 1264.dp)
+                .fillMaxWidth()
                 // Top is padded clear of the 60dp systemui status-bar window,
                 // which silently eats touches even while hidden in immersive —
                 // so header action buttons stay tappable.

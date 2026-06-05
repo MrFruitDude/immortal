@@ -1,6 +1,6 @@
 {
-  "versionCode": 4,
-  "versionName": "1.3",
+  "versionCode": 5,
+  "versionName": "1.4",
   "apkUrl": "https://github.com/starbrightlab/immortal/releases/latest/download/immortal.apk",
-  "notes": "Immortal 1.3 — security hardening for public release: HTTPS-only networking and internal screens no longer exported. Provisioning now auto-detects each Portal model's stock launcher/screensaver for a safe restore."
+  "notes": "Immortal 1.4 — looks great on larger Portals: the home content is now centered and comfortably sized on big displays (e.g. Portal+ 1920px) instead of stretching. Tested on Gen-1 Portal+ (Android 9). Hid a stray Android test app."
 }
