@@ -11,11 +11,12 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 
-/** Re-asserts our screensaver settings after a reboot. */
+/** Re-asserts our screensaver settings (and the battery dream gate) after a reboot. */
 class BootReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
     if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
       SettingsGuard.reaffirmScreensaver(context)
+      DreamPolicy.applyDreamGate(context)
     }
   }
 }

@@ -1,6 +1,6 @@
 {
-  "versionCode": 19,
-  "versionName": "1.18",
+  "versionCode": 20,
+  "versionName": "1.19",
   "apkUrl": "https://github.com/starbrightlab/immortal/releases/latest/download/immortal.apk",
-  "notes": "Immortal 1.18 — the App Store, redesigned: app icons, search, per-app detail pages (author, source, website, community credit), an Updates section for installed apps, Open buttons, and device-compatibility badges. Catalog schema v2 powers it, with CI-validated community submissions."
+  "notes": "Immortal 1.19 — the screensaver no longer bounces back to the launcher. Meta's power manager force-wakes any screensaver ~2 minutes in; Immortal now catches that and keeps the photo frame up permanently. On the Portal Go a new 'Pause screensaver on battery' setting (on by default) lets the device truly sleep when unplugged. Re-run the provisioning kit once to disable Meta's presence detector, which was also keeping devices awake all night."
 }

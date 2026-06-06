@@ -222,6 +222,29 @@ private fun ScreensaverSettingsScreen() {
         }
       }
 
+      // Battery models only (Portal Go): choose between battery life and an
+      // always-on frame when unplugged.
+      if (remember { DreamPolicy.hasBattery(context) }) {
+        SectionLabel("Power")
+        Surface(color = Color(0xFF1C1C1E), shape = RoundedCornerShape(18.dp)) {
+          Column {
+            ToggleRow("Pause screensaver on battery", settings.batterySaver) {
+              ScreensaverConfig.setBatterySaver(context, it)
+              settings = settings.copy(batterySaver = it)
+              DreamPolicy.applyDreamGate(context)
+            }
+            Text(
+                "On: when unplugged, the Portal sleeps at the screen timeout instead of " +
+                    "showing photos (saves the battery). Off: the photo frame stays on " +
+                    "battery too. While charging, the frame always runs.",
+                fontSize = 13.sp,
+                color = Color(0xFF9A9A9A),
+                modifier = Modifier.padding(start = 18.dp, end = 18.dp, bottom = 14.dp),
+            )
+          }
+        }
+      }
+
       Spacer(Modifier.size(28.dp))
       Surface(
           color = Color(0xFF2E6BE6),

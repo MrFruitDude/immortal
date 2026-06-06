@@ -25,6 +25,7 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
 
     <application
+        android:name=".ImmortalApp"
         android:allowBackup="true"
         android:requestLegacyExternalStorage="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -88,11 +89,14 @@
             android:label="App Store"
             android:theme="@style/Theme.SampleApp" />
 
-        <!-- Full-screen photo frame, launched internally from the Screensaver
-             button (explicit intent), so it isn't exported. -->
+        <!-- Full-screen photo frame: on-demand preview AND the permanent frame
+             DreamPolicy relaunches when the system force-wakes the screensaver.
+             Excluded from recents — it's ambient, not a task. -->
         <activity
             android:name=".PhotoFramePreviewActivity"
             android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
             android:theme="@style/Theme.SampleApp" />
 
         <!-- Screensaver settings (source folder/USB, fit, interval, …), opened from

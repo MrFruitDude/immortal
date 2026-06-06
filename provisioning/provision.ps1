@@ -174,6 +174,10 @@ function Grant-Perms {
   A shell pm grant $cfg["PKG"] android.permission.WRITE_SECURE_SETTINGS | Out-Null
   # Lets the "Install an APK" browser see downloaded APKs without a prompt.
   A shell pm grant $cfg["PKG"] android.permission.READ_EXTERNAL_STORAGE | Out-Null
+  # Lets Immortal bring the photo frame back instantly when the system force-wakes
+  # the screensaver (~2 min in, a quirk of Meta's power manager) even if another
+  # app is in the foreground.
+  A shell appops set $cfg["PKG"] SYSTEM_ALERT_WINDOW allow | Out-Null
   Ok "Permissions granted"
 }
 function Disable-Verifier {
@@ -188,6 +192,15 @@ function Disable-Ota {
   Step "Disabling Meta OS updates (so a future OTA can't undo this setup)"
   foreach ($p in ($cfg["OTA_PACKAGES"] -split "\s+")) { A shell pm disable-user --user 0 $p | Out-Null }
   Ok "OS updates disabled"
+}
+function Disable-Presence {
+  # Meta's presence detector pokes the power manager every ~20s: on battery the
+  # device never truly sleeps, and presence wakes bounce the screensaver back to
+  # the launcher. Reversible — restore re-enables it.
+  if ($cfg["DISABLE_PRESENCE"] -ne "true") { return }
+  Step "Disabling Meta's presence detector (lets the device sleep properly on battery)"
+  A shell pm disable-user --user 0 $cfg["PRESENCE_PKG"] | Out-Null
+  Ok "Presence detector disabled"
 }
 function Set-Launcher {
   if ($cfg["SET_LAUNCHER"] -ne "true") { return }
@@ -281,6 +294,9 @@ if ($Restore) {
   Step "Re-enabling Meta OS updates"
   foreach ($p in ($cfg["OTA_PACKAGES"] -split "\s+")) { A shell pm enable $p | Out-Null }
   Ok "OS updates restored"
+  Step "Re-enabling Meta's presence detector"
+  A shell pm enable $cfg["PRESENCE_PKG"] | Out-Null
+  Ok "Presence detector restored"
   Step "Restoring stock launcher"
   A shell cmd package set-home-activity $cfg["STOCK_HOME"] | Out-Null; Ok "Home restored ($($cfg["STOCK_HOME"]))"
   Step "Restoring stock screensaver"
@@ -304,6 +320,7 @@ Push-Assets
 Grant-Perms
 Disable-Verifier
 Disable-Ota
+Disable-Presence
 Snapshot-Stock
 Set-Launcher
 Set-Screensaver

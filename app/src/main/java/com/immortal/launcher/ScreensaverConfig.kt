@@ -35,6 +35,9 @@ object ScreensaverConfig {
       val intervalSec: Int = DEFAULT_INTERVAL,
       val shuffle: Boolean = false,
       val includeVideo: Boolean = true,
+      // Battery models (Portal Go) only: pause the screensaver while unplugged so
+      // the device can actually sleep, instead of showing photos until empty.
+      val batterySaver: Boolean = true,
   ) {
     /** True when the user has chosen a local folder for us to read. */
     val usesFolder: Boolean
@@ -55,6 +58,7 @@ object ScreensaverConfig {
         intervalSec = clampInterval(p.getInt("interval_sec", DEFAULT_INTERVAL)),
         shuffle = p.getBoolean("shuffle", false),
         includeVideo = p.getBoolean("include_video", true),
+        batterySaver = p.getBoolean("battery_saver", true),
     )
   }
 
@@ -72,4 +76,7 @@ object ScreensaverConfig {
 
   fun setIncludeVideo(c: Context, on: Boolean) =
       prefs(c).edit().putBoolean("include_video", on).apply()
+
+  fun setBatterySaver(c: Context, on: Boolean) =
+      prefs(c).edit().putBoolean("battery_saver", on).apply()
 }

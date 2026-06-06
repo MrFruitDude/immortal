@@ -233,6 +233,11 @@ grant_perms() {
   a shell pm grant "$PKG" android.permission.WRITE_SECURE_SETTINGS >/dev/null 2>&1
   # Lets the "Install an APK" browser see downloaded APKs without a prompt.
   a shell pm grant "$PKG" android.permission.READ_EXTERNAL_STORAGE >/dev/null 2>&1
+  # Lets Immortal bring the photo frame back instantly when the system force-wakes
+  # the screensaver (~2 min in, a quirk of Meta's power manager) even if another
+  # app is in the foreground. SYSTEM_ALERT_WINDOW holders may start activities
+  # from the background on Android 10.
+  a shell appops set "$PKG" SYSTEM_ALERT_WINDOW allow >/dev/null 2>&1
   ok "Permissions granted"
 }
 
@@ -249,6 +254,19 @@ disable_ota() {
   step "Disabling Meta OS updates (so a future OTA can't undo this setup)"
   for p in $OTA_PACKAGES; do a shell pm disable-user --user 0 "$p" >/dev/null 2>&1; done
   ok "OS updates disabled"
+}
+
+disable_presence() {
+  # Meta's presence service (camera-based "someone is nearby" detection) pokes
+  # the power manager every ~20s, which resets the sleep timer forever: on
+  # battery the device never actually sleeps (it just dreams until empty), and
+  # presence-triggered wakes bounce the screensaver back to the launcher. The
+  # stock Portal used it to wake its ambient frame; with Immortal it only burns
+  # battery. Reversible — restore re-enables it.
+  [ "${DISABLE_PRESENCE:-true}" = true ] || return
+  step "Disabling Meta's presence detector (lets the device sleep properly on battery)"
+  a shell pm disable-user --user 0 "$PRESENCE_PKG" >/dev/null 2>&1
+  ok "Presence detector disabled"
 }
 
 snapshot_stock() {
@@ -325,6 +343,7 @@ do_provision() {
   grant_perms
   disable_verifier
   disable_ota
+  disable_presence
   snapshot_stock
   set_launcher
   set_screensaver
@@ -343,6 +362,8 @@ do_restore() {
   a shell settings put global package_verifier_enable 1 >/dev/null 2>&1; ok "Verifier restored"
   step "Re-enabling Meta OS updates"
   for p in $OTA_PACKAGES; do a shell pm enable "$p" >/dev/null 2>&1; done; ok "OS updates restored"
+  step "Re-enabling Meta's presence detector"
+  a shell pm enable "$PRESENCE_PKG" >/dev/null 2>&1; ok "Presence detector restored"
   step "Restoring stock launcher"
   a shell cmd package set-home-activity "$STOCK_HOME" >/dev/null 2>&1; ok "Home restored ($STOCK_HOME)"
   step "Restoring stock screensaver"

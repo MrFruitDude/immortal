@@ -8,6 +8,7 @@
 package com.immortal.launcher
 
 import android.service.dreams.DreamService
+import android.util.Log
 import android.view.MotionEvent
 
 /**
@@ -24,16 +25,25 @@ class PhotoDreamService : DreamService() {
 
   override fun onAttachedToWindow() {
     super.onAttachedToWindow()
+    Log.i(TAG, "attached: dream starting")
     // Interactive so we receive touch and can exit on tap (verified on device).
     // Fullscreen for an immersive frame — tap-to-exit is the way out.
     isInteractive = true
     isFullscreen = true
     isScreenBright = true
     frame = PhotoFrameController(this)
-    frame.onExit = { finish() }
+    frame.onExit = {
+      Log.i(TAG, "onExit (tap) -> finish()")
+      // Mark this as a USER exit so DreamPolicy doesn't relaunch the frame.
+      DreamPolicy.userExitAt = System.currentTimeMillis()
+      finish()
+    }
     val root = frame.view
     // Tap dismisses, horizontal swipe changes photo (handled by the controller).
+    // Touch events are logged so spurious/phantom touches that end the dream are
+    // visible in logcat (they masquerade as a user tap otherwise).
     root.setOnTouchListener { _, ev ->
+      Log.i(TAG, "touch action=${ev.actionMasked} x=${ev.x} y=${ev.y}")
       frame.onTouch(ev)
       true
     }
@@ -41,8 +51,28 @@ class PhotoDreamService : DreamService() {
     frame.start()
   }
 
+  override fun onDreamingStarted() {
+    super.onDreamingStarted()
+    Log.i(TAG, "onDreamingStarted")
+  }
+
+  override fun onDreamingStopped() {
+    Log.i(TAG, "onDreamingStopped")
+    super.onDreamingStopped()
+  }
+
+  override fun onWakeUp() {
+    Log.i(TAG, "onWakeUp (system or finish())")
+    super.onWakeUp()
+  }
+
   override fun onDetachedFromWindow() {
+    Log.i(TAG, "detached: dream ending")
     if (this::frame.isInitialized) frame.stop()
     super.onDetachedFromWindow()
+  }
+
+  private companion object {
+    const val TAG = "ImmortalDream"
   }
 }
