@@ -200,7 +200,7 @@ function Disable-Verifier {
 function Disable-Ota {
   if ($cfg["DISABLE_OTA"] -ne "true") { return }
   Step "Disabling Meta OS updates (so a future OTA can't undo this setup)"
-  foreach ($p in ($cfg["OTA_PACKAGES"] -split "\s+")) { A shell pm disable-user --user 0 $p | Out-Null }
+  foreach ($p in ($cfg["OTA_PACKAGES"] -split "\s+")) { if ($p) { A shell "pm disable-user --user 0 $p 2>/dev/null" | Out-Null } }
   Ok "OS updates disabled"
 }
 function Disable-Presence {
@@ -235,7 +235,7 @@ function Set-Screensaver {
 $StateFile = "/sdcard/immortal_restore.env"
 
 function Snapshot-Stock {
-  if ((A shell "[ -f $StateFile ] && echo yes").Trim() -eq "yes") { return }
+  if ("$(A shell "[ -f $StateFile ] && echo yes")".Trim() -eq "yes") { return }
   $pkg = $cfg["PKG"]
   $home = ((A shell 'cmd package query-activities --components -a android.intent.action.MAIN -c android.intent.category.HOME') -split "`n" |
     ForEach-Object { $_.Trim() } |
@@ -251,7 +251,7 @@ function Snapshot-Stock {
 }
 
 function Load-State {
-  if ((A shell "[ -f $StateFile ] && echo yes").Trim() -ne "yes") {
+  if ("$(A shell "[ -f $StateFile ] && echo yes")".Trim() -ne "yes") {
     Warn "No saved snapshot on device - using config.env fallbacks for restore"; return
   }
   foreach ($line in ((A shell cat $StateFile) -split "`n")) {
@@ -302,7 +302,7 @@ if ($Restore) {
   A shell pm enable $cfg["VERIFIER_PKG"] | Out-Null
   A shell settings put global package_verifier_enable 1 | Out-Null; Ok "Verifier restored"
   Step "Re-enabling Meta OS updates"
-  foreach ($p in ($cfg["OTA_PACKAGES"] -split "\s+")) { A shell pm enable $p | Out-Null }
+  foreach ($p in ($cfg["OTA_PACKAGES"] -split "\s+")) { if ($p) { A shell "pm enable $p 2>/dev/null" | Out-Null } }
   Ok "OS updates restored"
   Step "Re-enabling Meta's presence detector"
   A shell pm enable $cfg["PRESENCE_PKG"] | Out-Null
