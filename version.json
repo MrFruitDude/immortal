@@ -1,6 +1,6 @@
 {
-  "versionCode": 12,
-  "versionName": "1.11",
+  "versionCode": 13,
+  "versionName": "1.12",
   "apkUrl": "https://github.com/starbrightlab/immortal/releases/latest/download/immortal.apk",
-  "notes": "Immortal 1.11 — use your own photos and videos on the screensaver. Open Settings → Screensaver to point the photo frame at a folder, including one on a USB-C drive or SD card plugged into your Portal. Falls back to the built-in photos if the folder can't be read."
+  "notes": "Immortal 1.12 — picking a screensaver folder is clearer: each folder shows its photo/video count and thumbnail previews, and inside a folder you see a preview of the media it contains."
 }
