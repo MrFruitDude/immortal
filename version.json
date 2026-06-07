@@ -1,6 +1,6 @@
 {
-  "versionCode": 28,
-  "versionName": "1.27",
+  "versionCode": 29,
+  "versionName": "1.28",
   "apkUrl": "https://github.com/starbrightlab/immortal/releases/latest/download/immortal.apk",
-  "notes": "Immortal 1.27 — Extra large app icons, by community request: a third size in Settings folder → Immortal → App icon size, made for the Portal+'s big screen. Folders grow to match."
+  "notes": "Immortal 1.28 — Gen-1 installs now survive a reboot: the kit disables the Meta overlay that made the stock install dialog white-on-white (found by u/keremimo on Reddit), so with the daemon down the system dialog works instead of pausing installs."
 }

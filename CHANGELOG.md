@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.28 (2026-06-07)
+
+Gen-1 installs now survive a reboot — the provisioning kit repairs the Portal's own installer dialog.
+
+- The blank "no buttons" install dialog on the Gen-1 Portal+ is caused by a Meta display overlay (`com.facebook.aloha.rro.niu.android`) re-theming it white-on-white. Provisioning now disables that overlay (`cmd overlay disable`), restoring the normal dialog. Unlike the silent-install daemon, this **persists across reboots**, so a rebooted Gen-1 with the daemon down falls back to the now-visible system dialog instead of pausing new installs. Community find via Reddit (**u/keremimo**); thanks also to **u/TheMaddis**.
+- `cmd overlay` is applied immediately with no reboot, so it doesn't disturb the running daemon or Shizuku. Gated to API < 29; skipped on newer Portals. Reversible with `--restore`; run on its own with `--overlay-fix` / `-OverlayFix`. New `DISABLE_INSTALLER_OVERLAY` flag in `config.env` (default on).
+- The store, "Install with Immortal," and APK sideloads no longer report "paused" on a Gen-1 once the overlay fix is in place — they use the system dialog when the daemon isn't running. `--status` now reports installer-dialog state.
+
 ## 1.27 (2026-06-06)
 
 Extra large app icons — by community request, for the Portal+'s big screen.

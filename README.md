@@ -40,8 +40,11 @@ services. Touch models and the remote-driven **Portal TV** are both supported.
   device: the store and self-update use it, an **"Install with Immortal"** handler
   (`ApkInstallActivity`) catches any APK you open from Chrome or a file manager (set it as the
   default and those installs go silent), and an **"Install an APK"** browser (`ApkBrowserActivity`)
-  lists APKs in your Downloads. For Play-Store apps via **Aurora Store**, use Aurora's *Shizuku*
-  installer together with Shizuku (`provision.sh --shizuku`) — see
+  lists APKs in your Downloads. The kit also **repairs the stock dialog itself** by disabling the
+  Meta display overlay that renders it white-on-white — a change that, unlike the daemon, survives a
+  reboot — so even with the daemon down a Gen-1 falls back to the now-visible system installer. For
+  Play-Store apps via **Aurora Store**, use Aurora's *Shizuku* installer together with Shizuku
+  (`provision.sh --shizuku`) — see
   [Play-Store apps on a first-gen Portal](#play-store-apps-via-aurora-on-a-first-gen-portal) below;
   Aurora's own Session/Native installers can't get past the broken Gen-1 dialog. Newer Portals have
   a working installer and don't need any of this.
@@ -78,12 +81,21 @@ that the provisioning kit starts over USB — after that, the app store, "Instal
 sideloading all install silently with no dialog.
 
 That helper can't survive a reboot on this generation (a limitation of running without root on
-Android 9 — the same reason tools like Shizuku need re-starting). So **after the Portal restarts,
-installing *new* apps is paused until you reconnect it to a computer and run the installer again** —
-a 30-second step. Everything else keeps working across reboots: your home screen, screensaver, and
-every app you've already installed. Because Portals have no battery and stay plugged in, they
-reboot rarely, so in practice you set up your apps once and seldom touch this again. Immortal shows
-a clear note in the store when installs are paused, so it's never a mystery.
+Android 9 — the same reason tools like Shizuku need re-starting). To keep installs working across
+reboots anyway, the kit **also repairs the Portal's own installer dialog**: the blank-with-no-buttons
+screen is caused by one of Meta's display overlays re-theming it white-on-white — a great community
+discovery by [u/keremimo](https://www.reddit.com/user/keremimo/) on r/FacebookPortal — and disabling
+that overlay (`cmd overlay disable`) brings the normal dialog back. Unlike the helper, that change is
+remembered across reboots — so after a restart, the app store, "Install with Immortal," and
+sideloading fall back to the **now-visible system dialog** with no reconnect needed. (The silent
+helper is still the nicer path when it's running — no dialog at all — so reconnecting to restart it
+is still worthwhile, just no longer required to install anything.)
+
+If you'd rather leave the stock dialog untouched, set `DISABLE_INSTALLER_OVERLAY=false` in
+`config.env`; then a rebooted Gen-1 with the helper down **pauses new installs until you reconnect
+and re-run the installer** — a 30-second step — and Immortal shows a clear note in the store so it's
+never a mystery. Either way, everything else keeps working across reboots: your home screen,
+screensaver, and every app you've already installed.
 
 The **Portal TV** is the same generation (Android 9), so the same install mechanics apply. It has
 no touchscreen, but Immortal is fully driveable with the TV remote — the home grid, folders, App

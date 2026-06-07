@@ -207,7 +207,8 @@ object StoreCatalog {
           val ok = InstallDaemon.install(context, apk, app.packageName)
           main.post { status(app.packageName, if (ok) "Installed ✓" else "Install failed") }
         } else {
-          // Android-10 models: the system installer dialog works.
+          // Android-10 models — and Gen-1 once the overlay fix makes the stock
+          // dialog visible — use the system installer dialog.
           commit(context, app.packageName, apk)
         }
       } catch (t: Throwable) {

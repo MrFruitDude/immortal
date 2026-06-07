@@ -13,6 +13,7 @@
 #   ./provision.sh --restore  put the stock launcher/screensaver/verifier back
 #   ./provision.sh --status   show what's currently set
 #   ./provision.sh --installd restart only the silent-install daemon
+#   ./provision.sh --overlay-fix  fix the Gen-1 white-on-white installer dialog
 #   ./provision.sh --shizuku  start the Shizuku server (optional; for apps that
 #                             use the Shizuku API, e.g. Aurora's Shizuku mode)
 
@@ -331,6 +332,43 @@ disable_verifier() {
   ok "Verifier disabled"
 }
 
+disable_installer_overlay() {
+  # GEN-1 PORTAL+ ONLY (Android 9). Meta ships a Runtime Resource Overlay (RRO)
+  # that re-themes framework resources so the *stock* package-installer dialog
+  # renders white-on-white: the confirm screen comes up blank with an invisible
+  # "Install" button in the bottom-right corner. Disabling the overlay restores
+  # the normal styling, so the on-device installer dialog becomes usable again.
+  #
+  # Why we do this even though Immortal's silent daemon already bypasses the
+  # dialog: the daemon (and Shizuku) DON'T survive a reboot, but overlay state is
+  # persisted by the framework in /data/system/overlays.xml and DOES. So a
+  # rebooted Gen-1 with the daemon down still has a working stock installer —
+  # third-party stores (Aurora/F-Droid) and APK sideloads keep working until the
+  # kit is re-run. `cmd overlay` takes effect immediately; no reboot required, so
+  # it won't kill the daemon/Shizuku the way a night-mode reboot would.
+  [ "${DISABLE_INSTALLER_OVERLAY:-true}" = true ] || return
+  local sdk; sdk="$(a shell getprop ro.build.version.sdk 2>/dev/null | tr -d '\r')"
+  # Newer Portals (API >= 29) have a working installer dialog and don't ship this
+  # overlay — skip them so we don't touch theming that isn't broken.
+  [ "${sdk:-99}" -lt 29 ] 2>/dev/null || return
+  step "Fixing the on-device installer dialog (disabling Meta's white-on-white overlay)"
+  local did=0
+  for ov in $INSTALLER_OVERLAY_PKGS; do
+    # Only act on overlays actually present on this device.
+    a shell "cmd overlay list 2>/dev/null" | tr -d '\r' | grep -q "$ov" || continue
+    a shell "cmd overlay disable --user 0 $ov" >/dev/null 2>&1 && { ok "Disabled $ov"; did=1; }
+  done
+  if [ "$did" = 1 ]; then
+    # Marker the app reads (no hidden IOverlayManager API needed) to know the
+    # stock dialog is usable, so the store can fall back to it when the daemon is
+    # down instead of telling the user to reconnect.
+    a shell settings put global immortal_overlay_fix 1 >/dev/null 2>&1
+    ok "Installer dialog fix applied"
+  else
+    warn "No installer overlay found to disable (already fixed, or not a Gen-1)"
+  fi
+}
+
 disable_ota() {
   [ "${DISABLE_OTA:-false}" = true ] || return
   step "Disabling Meta OS updates (so a future OTA can't undo this setup)"
@@ -424,6 +462,7 @@ do_provision() {
   grant_perms
   apply_system_tweaks
   disable_verifier
+  disable_installer_overlay
   disable_ota
   disable_presence
   snapshot_stock
@@ -450,6 +489,12 @@ do_restore() {
   step "Re-enabling Meta's install verifier"
   a shell pm enable "$VERIFIER_PKG" >/dev/null 2>&1
   a shell settings put global package_verifier_enable 1 >/dev/null 2>&1; ok "Verifier restored"
+  step "Re-enabling Meta's installer overlay"
+  for ov in $INSTALLER_OVERLAY_PKGS; do
+    a shell "cmd overlay list 2>/dev/null" | tr -d '\r' | grep -q "$ov" \
+      && a shell "cmd overlay enable --user 0 $ov" >/dev/null 2>&1
+  done
+  a shell settings delete global immortal_overlay_fix >/dev/null 2>&1; ok "Installer overlay restored"
   step "Re-enabling Meta OS updates"
   for p in $OTA_PACKAGES; do a shell pm enable "$p" >/dev/null 2>&1; done; ok "OS updates restored"
   step "Re-enabling Meta's presence detector"
@@ -476,6 +521,7 @@ do_status() {
   printf "  home:       %s\n" "$(a shell 'cmd package resolve-activity -a android.intent.action.MAIN -c android.intent.category.HOME' 2>/dev/null | awk -F= '/packageName/{print $2; exit}' | tr -d '\r')"
   printf "  screensaver:%s\n" " $(a shell settings get secure screensaver_components 2>/dev/null | tr -d '\r')"
   printf "  verifier:   %s\n" "$(a shell pm list packages -d "$VERIFIER_PKG" 2>/dev/null | tr -d '\r' | grep -q . && echo disabled || echo enabled)"
+  printf "  installer dialog: %s\n" "$([ "$(a shell settings get global immortal_overlay_fix 2>/dev/null | tr -d '\r')" = "1" ] && echo 'fixed (overlay disabled)' || echo 'stock')"
   printf "  OS updates: %s\n" "$(a shell pm list packages -d 2>/dev/null | tr -d '\r' | grep -q 'alohaotasetup' && echo disabled || echo enabled)"
   printf "  client:     %s\n" "$(a shell pm list packages "$PKG" 2>/dev/null | tr -d '\r' | grep -q . && echo installed || echo 'not installed')"
 }
@@ -485,8 +531,9 @@ case "${1:-}" in
   --status|-s)  do_status ;;
   --apps|-a)    resolve_adb; wait_for_device; install_apps ;;
   --installd|-d) resolve_adb; wait_for_device; start_installd ;;
+  --overlay-fix) resolve_adb; wait_for_device; disable_installer_overlay ;;
   --shizuku|-z) resolve_adb; wait_for_device; start_shizuku ;;
-  --help|-h)    sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//' ;;
+  --help|-h)    sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//' ;;
   "")           do_provision ;;
   *)            die "Unknown option: $1 (use --restore, --status, or no argument)" ;;
 esac

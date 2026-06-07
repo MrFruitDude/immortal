@@ -10,8 +10,9 @@
     powershell -ExecutionPolicy Bypass -File provision.ps1            # provision
     powershell -ExecutionPolicy Bypass -File provision.ps1 -Restore   # undo
     powershell -ExecutionPolicy Bypass -File provision.ps1 -Status    # show state
+    powershell -ExecutionPolicy Bypass -File provision.ps1 -OverlayFix # fix Gen-1 installer dialog
 #>
-param([switch]$Restore, [switch]$Status, [switch]$Apps, [switch]$Installd, [switch]$Shizuku)
+param([switch]$Restore, [switch]$Status, [switch]$Apps, [switch]$Installd, [switch]$Shizuku, [switch]$OverlayFix)
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -253,6 +254,31 @@ function Disable-Verifier {
   A shell settings put global package_verifier_enable 0 | Out-Null
   Ok "Verifier disabled"
 }
+function Disable-InstallerOverlay {
+  # GEN-1 PORTAL+ ONLY (Android 9). Meta's RRO re-themes framework resources so the
+  # stock package-installer dialog renders white-on-white (blank confirm screen,
+  # invisible "Install" button bottom-right). Disabling the overlay restores normal
+  # styling. Unlike the daemon/Shizuku, overlay state is persisted by the framework
+  # and SURVIVES A REBOOT, so a rebooted Gen-1 with the daemon down still has a
+  # working stock installer. `cmd overlay` is immediate; no reboot required.
+  if ($cfg["DISABLE_INSTALLER_OVERLAY"] -eq "false") { return }
+  $sdk = [int]("$(A shell getprop ro.build.version.sdk)".Trim())
+  if ($sdk -ge 29) { return }  # newer Portals have a working dialog; no overlay to fix
+  Step "Fixing the on-device installer dialog (disabling Meta's white-on-white overlay)"
+  $did = $false
+  foreach ($ov in ($cfg["INSTALLER_OVERLAY_PKGS"] -split "\s+")) {
+    if (-not $ov) { continue }
+    if (-not ((A shell "cmd overlay list 2>/dev/null") -match [regex]::Escape($ov))) { continue }
+    A shell "cmd overlay disable --user 0 $ov" | Out-Null
+    Ok "Disabled $ov"; $did = $true
+  }
+  if ($did) {
+    A shell settings put global immortal_overlay_fix 1 | Out-Null
+    Ok "Installer dialog fix applied"
+  } else {
+    Warn "No installer overlay found to disable (already fixed, or not a Gen-1)"
+  }
+}
 function Disable-Ota {
   if ($cfg["DISABLE_OTA"] -ne "true") { return }
   Step "Disabling Meta OS updates (so a future OTA can't undo this setup)"
@@ -331,6 +357,12 @@ if ($Shizuku) {
   exit 0
 }
 
+if ($OverlayFix) {
+  Wait-Device
+  Disable-InstallerOverlay
+  exit 0
+}
+
 if ($Apps) {
   Wait-Device
   Install-Apps
@@ -352,6 +384,8 @@ if ($Status) {
   Write-Host "  screensaver: $("$(A shell settings get secure screensaver_components)".Trim())"
   $disabled = "$(A shell pm list packages -d $cfg["VERIFIER_PKG"])".Trim()
   Write-Host "  verifier:    $(if ($disabled) {'disabled'} else {'enabled'})"
+  $ovfix = "$(A shell settings get global immortal_overlay_fix)".Trim()
+  Write-Host "  installer dialog: $(if ($ovfix -eq '1') {'fixed (overlay disabled)'} else {'stock'})"
   $ota = (A shell pm list packages -d | Select-String "alohaotasetup")
   Write-Host "  OS updates:  $(if ($ota) {'disabled'} else {'enabled'})"
   $client = "$(A shell pm list packages $cfg["PKG"])".Trim()
@@ -374,6 +408,14 @@ if ($Restore) {
   Step "Re-enabling Meta's install verifier"
   A shell pm enable $cfg["VERIFIER_PKG"] | Out-Null
   A shell settings put global package_verifier_enable 1 | Out-Null; Ok "Verifier restored"
+  Step "Re-enabling Meta's installer overlay"
+  foreach ($ov in ($cfg["INSTALLER_OVERLAY_PKGS"] -split "\s+")) {
+    if (-not $ov) { continue }
+    if ((A shell "cmd overlay list 2>/dev/null") -match [regex]::Escape($ov)) {
+      A shell "cmd overlay enable --user 0 $ov" | Out-Null
+    }
+  }
+  A shell settings delete global immortal_overlay_fix | Out-Null; Ok "Installer overlay restored"
   Step "Re-enabling Meta OS updates"
   foreach ($p in ($cfg["OTA_PACKAGES"] -split "\s+")) { if ($p) { A shell "pm enable $p 2>/dev/null" | Out-Null } }
   Ok "OS updates restored"
@@ -403,6 +445,7 @@ Push-Assets
 Grant-Perms
 Apply-SystemTweaks
 Disable-Verifier
+Disable-InstallerOverlay
 Disable-Ota
 Disable-Presence
 Snapshot-Stock

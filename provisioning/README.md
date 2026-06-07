@@ -56,9 +56,11 @@ uses — so Immortal's on-device App Store and self-update can install apps
 **silently** (the launcher drops an APK in a queue; the daemon `pm install`s it).
 
 This is what makes on-device installs work on the **Gen-1 Portal+** (Android 9),
-whose built-in install-confirmation dialog is broken (a blank window with no
-buttons — a Meta system-UI bug we can't fix from an app). It's also a one-tap,
-no-dialog upgrade on every other model.
+whose built-in install-confirmation dialog renders as a blank window with no
+visible buttons. The cause is a Meta Runtime Resource Overlay
+(`com.facebook.aloha.rro.niu.android`) that re-themes the framework dialog
+white-on-white — the buttons are there, just invisible (you can blind-tap the
+bottom-right corner to confirm).
 
 Like all non-root helpers (Shizuku included), the daemon **does not survive a
 reboot**. After a reboot, restart it (no full re-provision needed):
@@ -68,8 +70,28 @@ reboot**. After a reboot, restart it (no full re-provision needed):
 # powershell ... provision.ps1 -Installd   # Windows
 ```
 
+### Repairing the stock installer dialog (Gen-1)
+
+Because the daemon doesn't persist across reboots, provisioning **also disables
+the offending overlay** so the Portal's own installer dialog becomes usable
+again — and that change *is* remembered across reboots (the framework stores
+overlay state in `/data/system/overlays.xml`). So when the daemon is down, a
+Gen-1 falls back to the now-visible system dialog instead of pausing installs.
+It's applied with `cmd overlay disable` (immediate; no reboot, so it can't kill
+the running daemon), gated on API < 29, and reversed by `--restore`.
+
+```bash
+./provision.sh --overlay-fix       # macOS/Linux (apply on its own)
+# powershell ... provision.ps1 -OverlayFix   # Windows
+```
+
+Prefer to leave the stock dialog alone? Set `DISABLE_INSTALLER_OVERLAY=false` in
+`config.env`; then a rebooted Gen-1 with the daemon down pauses new installs until
+you restart the daemon. Newer Portals (API ≥ 29) have a working dialog and ship no
+such overlay, so this step is skipped on them automatically.
+
 When the daemon isn't running, the store falls back to the system installer
-(works on models with a working dialog; on the Gen-1 Portal+ restart the daemon).
+(visible on newer models, and on a Gen-1 once the overlay fix above is applied).
 
 ### Pre-installing apps
 

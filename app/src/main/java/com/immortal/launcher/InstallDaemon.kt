@@ -9,6 +9,7 @@ package com.immortal.launcher
 
 import android.content.Context
 import android.os.Build
+import android.provider.Settings
 import java.io.File
 
 /**
@@ -55,8 +56,33 @@ object InstallDaemon {
 
   fun legacyInstaller(): Boolean = isLegacy(Build.VERSION.SDK_INT)
 
-  /** Gen-1 with the daemon down: on-device installs are paused until it's restarted. */
-  fun installPaused(context: Context): Boolean = legacyInstaller() && !isAvailable(context)
+  /**
+   * Whether the provisioning kit has fixed the Gen-1 installer dialog by disabling
+   * Meta's white-on-white RRO (it sets the global flag `immortal_overlay_fix=1`).
+   * When true, the *stock* PackageInstaller dialog is usable again, so a Gen-1 with
+   * the daemon down can still install via the system dialog instead of being paused.
+   * Unlike the daemon, the overlay fix persists across reboots, so this can be true
+   * even when the daemon isn't running. Reading the marker avoids needing the hidden
+   * IOverlayManager API to query overlay state directly.
+   */
+  fun installerDialogFixed(context: Context): Boolean =
+      runCatching { Settings.Global.getInt(context.contentResolver, OVERLAY_FIX_FLAG, 0) }
+          .getOrDefault(0) == 1
+
+  internal const val OVERLAY_FIX_FLAG = "immortal_overlay_fix"
+
+  /** Pure paused decision (extracted for testing): paused only when there is no
+   *  silent path (daemon) AND no working dialog (overlay fix) on a Gen-1. */
+  internal fun isPaused(legacy: Boolean, daemonAvailable: Boolean, dialogFixed: Boolean): Boolean =
+      legacy && !daemonAvailable && !dialogFixed
+
+  /**
+   * Gen-1 with the daemon down AND no working dialog: on-device installs are truly
+   * paused until the kit is re-run. If the overlay fix is in place the stock dialog
+   * works, so callers fall through to PackageInstaller rather than refusing.
+   */
+  fun installPaused(context: Context): Boolean =
+      isPaused(legacyInstaller(), isAvailable(context), installerDialogFixed(context))
 
   /**
    * Android-10 model with the daemon down. Installs aren't *blocked* here — the

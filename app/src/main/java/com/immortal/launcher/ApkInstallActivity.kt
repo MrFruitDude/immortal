@@ -116,7 +116,8 @@ class ApkInstallActivity : ComponentActivity() {
         }
       }
       else -> {
-        // Newer models: hand off to the working system installer.
+        // Newer models — and Gen-1 once the overlay fix has made the stock dialog
+        // visible — hand off to the working system installer.
         val ok =
             runCatching {
                   startActivity(

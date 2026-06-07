@@ -39,6 +39,31 @@ class InstallDaemonTest {
     assertFalse(InstallDaemon.isLegacy(34))
   }
 
+  // --- paused decision (daemon vs. overlay-fixed dialog) ----------------------
+
+  @Test
+  fun isPaused_gen1_noDaemon_noDialogFix_isPaused() {
+    // Gen-1, daemon down, overlay not fixed: nothing can install on-device.
+    assertTrue(InstallDaemon.isPaused(legacy = true, daemonAvailable = false, dialogFixed = false))
+  }
+
+  @Test
+  fun isPaused_gen1_overlayFixed_fallsThroughToDialog() {
+    // Gen-1, daemon down, but the overlay fix made the stock dialog usable —
+    // not paused; callers use PackageInstaller. This survives reboots.
+    assertFalse(InstallDaemon.isPaused(legacy = true, daemonAvailable = false, dialogFixed = true))
+  }
+
+  @Test
+  fun isPaused_gen1_daemonUp_neverPaused() {
+    assertFalse(InstallDaemon.isPaused(legacy = true, daemonAvailable = true, dialogFixed = false))
+  }
+
+  @Test
+  fun isPaused_newerModels_neverPaused() {
+    assertFalse(InstallDaemon.isPaused(legacy = false, daemonAvailable = false, dialogFixed = false))
+  }
+
   // --- heartbeat freshness ----------------------------------------------------
 
   @Test
