@@ -24,6 +24,16 @@
          the provisioning kit; also requested at runtime. -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
 
+    <!-- "hey" trigger guard. Millennium's TriggerReceiver requires this permission, so only
+         the launcher may fire the push-to-talk trigger (not arbitrary apps). It's signature-
+         level and DEFINED HERE (the sender) on purpose: Immortal and Millennium are signed with
+         different keys, so a signature permission defined by Millennium couldn't be held by us.
+         Defining it on the sender means only Immortal-signed apps hold it -> only we can trigger. -->
+    <permission
+        android:name="com.immortal.launcher.permission.HEY_TRIGGER"
+        android:protectionLevel="signature" />
+    <uses-permission android:name="com.immortal.launcher.permission.HEY_TRIGGER" />
+
     <application
         android:name=".ImmortalApp"
         android:allowBackup="true"
