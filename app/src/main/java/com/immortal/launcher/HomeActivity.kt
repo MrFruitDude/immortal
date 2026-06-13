@@ -769,7 +769,10 @@ private fun HeaderBar(onScreensaver: () -> Unit) {
           color = Color(0x33FFFFFF),
           shape = androidx.compose.foundation.shape.CircleShape,
           modifier =
-              Modifier.size(56.dp).tvFocusable(androidx.compose.foundation.shape.CircleShape) {
+              Modifier.size(56.dp).tvFocusable(
+                  shape = androidx.compose.foundation.shape.CircleShape,
+                  onLongClick = { openHeyPicker(context, pkg) },
+              ) {
                 fireHey(context, pkg)
               },
       ) {
@@ -970,6 +973,23 @@ private fun heyPackage(context: android.content.Context): String? =
 /** Ask Millennium to activate the user's active assistant (same path as a wake word). */
 private fun fireHey(context: android.content.Context, pkg: String) {
   context.sendBroadcast(Intent(HEY_TRIGGER_ACTION).setPackage(pkg))
+}
+
+/** Millennium's assistant picker (premium: choose which assistant to talk to). */
+private const val HEY_PICKER_ACTIVITY = "com.millennium.ui.HeyPickerActivity"
+
+/** Long-press: open Millennium's picker. Falls back to a normal trigger if the
+ *  installed Millennium predates the picker (so the gesture is never a dead end). */
+private fun openHeyPicker(context: android.content.Context, pkg: String) {
+  val ok =
+      runCatching {
+            context.startActivity(
+                Intent()
+                    .setClassName(pkg, HEY_PICKER_ACTIVITY)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+          }
+          .isSuccess
+  if (!ok) fireHey(context, pkg)
 }
 
 /** White line-art microphone glyph for the header "hey" button. */

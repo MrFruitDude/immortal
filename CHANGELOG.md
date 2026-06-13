@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.36 (2026-06-13)
+
+Refinements to the "hey" voice button.
+
+- **Long-press the "hey" button** to pick *which* assistant to talk to, instead of just the default. The chooser is shown by the Millennium voice app, which unlocks more than the built-in Alexa with Premium.
+- **Hardened the trigger:** the "hey" trigger can now only be fired by the launcher itself (a signature-permission guard), not by other apps on the device.
+
 ## 1.35 (2026-06-13)
 
 A push-to-talk voice button in the header, and a tidier top bar.

@@ -9,9 +9,11 @@ package com.immortal.launcher
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,24 +37,34 @@ import androidx.compose.ui.unit.dp
  * scale so the selection is obvious from across a room. On touch models it behaves
  * like a normal clickable.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun Modifier.tvFocusable(
     shape: Shape = RoundedCornerShape(16.dp),
     focusScale: Float = 1.06f,
     ringColor: Color = Color.White,
     enabled: Boolean = true,
+    onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ): Modifier {
   if (!enabled) return this
   val source = remember { MutableInteractionSource() }
   val focused by source.collectIsFocusedAsState()
   val scale by animateFloatAsState(if (focused) focusScale else 1f, label = "tvFocusScale")
-  return this.scale(scale)
-      .border(
-          BorderStroke(if (focused) 3.dp else 0.dp, if (focused) ringColor else Color.Transparent),
-          shape,
-      )
-      .clickable(interactionSource = source, indication = null, onClick = onClick)
+  val base =
+      this.scale(scale)
+          .border(
+              BorderStroke(if (focused) 3.dp else 0.dp, if (focused) ringColor else Color.Transparent),
+              shape,
+          )
+  // Stable clickable when there's no long-press handler (unchanged for every other
+  // caller); only the "hey" button opts into combinedClickable for its picker.
+  return if (onLongClick != null) {
+    base.combinedClickable(
+        interactionSource = source, indication = null, onClick = onClick, onLongClick = onLongClick)
+  } else {
+    base.clickable(interactionSource = source, indication = null, onClick = onClick)
+  }
 }
 
 /**
