@@ -737,8 +737,18 @@ private fun HeaderBar(onScreensaver: () -> Unit) {
   // right, right-aligned, so the header reads as a balanced pair of blocks. The
   // clock and the right-hand stack are centred against each other.
   Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-    // Screensaver entry — left, with the stock launcher's stacked-photo icon so
-    // the affordance reads the same as the Portal users already know.
+    // Clock anchors the top-left corner; the action buttons sit just to its right
+    // (now that there's a group of them, leading with the buttons looked off).
+    Text(
+        SimpleDateFormat(if (use24Hour) "H:mm" else "h:mm", Locale.getDefault()).format(now),
+        color = Color.White,
+        fontSize = 56.sp,
+        fontWeight = FontWeight.Light,
+        lineHeight = 56.sp,
+    )
+    Spacer(Modifier.size(28.dp))
+    // Screensaver entry — the stock launcher's stacked-photo icon so the affordance
+    // reads the same as the Portal users already know.
     Surface(
         color = Color(0x33FFFFFF),
         shape = androidx.compose.foundation.shape.CircleShape,
@@ -766,14 +776,6 @@ private fun HeaderBar(onScreensaver: () -> Unit) {
         Box(contentAlignment = Alignment.Center) { MicGlyph() }
       }
     }
-    Spacer(Modifier.size(18.dp))
-    Text(
-        SimpleDateFormat(if (use24Hour) "H:mm" else "h:mm", Locale.getDefault()).format(now),
-        color = Color.White,
-        fontSize = 56.sp,
-        fontWeight = FontWeight.Light,
-        lineHeight = 56.sp,
-    )
     Spacer(Modifier.weight(1f))
     Column(horizontalAlignment = Alignment.End) {
       Row(
