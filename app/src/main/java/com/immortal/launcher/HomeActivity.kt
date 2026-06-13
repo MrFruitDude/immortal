@@ -702,12 +702,17 @@ private fun HeaderBar(onScreensaver: () -> Unit) {
   // The clock format is likewise re-read on resume so flipping Auto/12h/24h in
   // Immortal Settings updates the header the moment the user returns home.
   var use24Hour by remember { mutableStateOf(ImmortalSettings.use24HourClock(context)) }
+  // The "hey" button only appears when Millennium is installed; re-checked on
+  // resume so it shows up the moment the user finishes provisioning without
+  // needing to relaunch the launcher.
+  var heyPkg by remember { mutableStateOf(heyPackage(context)) }
   val lifecycleOwner = LocalLifecycleOwner.current
   DisposableEffect(lifecycleOwner) {
     val obs = LifecycleEventObserver { _, e ->
       if (e == Lifecycle.Event.ON_RESUME) {
         weatherUnit = ImmortalSettings.load(context).weatherUnit
         use24Hour = ImmortalSettings.use24HourClock(context)
+        heyPkg = heyPackage(context)
       }
     }
     lifecycleOwner.lifecycle.addObserver(obs)
@@ -743,6 +748,23 @@ private fun HeaderBar(onScreensaver: () -> Unit) {
             },
     ) {
       Box(contentAlignment = Alignment.Center) { StackedPhotoIcon() }
+    }
+    // "Hey" button — push-to-talk for the active assistant. The launcher stays
+    // dumb: it just broadcasts the trigger; Millennium owns assistant selection,
+    // the premium gate and the falcon mic handoff. Only shown when Millennium is
+    // installed (so a bare launcher has no dead button).
+    heyPkg?.let { pkg ->
+      Spacer(Modifier.size(14.dp))
+      Surface(
+          color = Color(0x33FFFFFF),
+          shape = androidx.compose.foundation.shape.CircleShape,
+          modifier =
+              Modifier.size(56.dp).tvFocusable(androidx.compose.foundation.shape.CircleShape) {
+                fireHey(context, pkg)
+              },
+      ) {
+        Box(contentAlignment = Alignment.Center) { MicGlyph() }
+      }
     }
     Spacer(Modifier.size(18.dp))
     Text(
@@ -923,6 +945,64 @@ private fun DayCell(d: Weather.DayForecast, modifier: Modifier = Modifier) {
       Text("${d.hi}°", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
       Text("${d.lo}°", color = Color(0xFF9A9A9A), fontSize = 16.sp)
     }
+  }
+}
+
+// --- "Hey" assistant trigger -------------------------------------------------
+// Millennium publishes an exported receiver for this action; the launcher only
+// fires it. Release build preferred, debug fallback for sideloaded test devices.
+private const val HEY_TRIGGER_ACTION = "com.millennium.TRIGGER_ASSISTANT"
+private val HEY_PACKAGES = listOf("com.millennium", "com.millennium.debug")
+
+/** The installed Millennium ("hey") package, release preferred, or null if absent. */
+private fun heyPackage(context: android.content.Context): String? =
+    HEY_PACKAGES.firstOrNull { pkg ->
+      try {
+        context.packageManager.getPackageInfo(pkg, 0)
+        true
+      } catch (_: android.content.pm.PackageManager.NameNotFoundException) {
+        false
+      }
+    }
+
+/** Ask Millennium to activate the user's active assistant (same path as a wake word). */
+private fun fireHey(context: android.content.Context, pkg: String) {
+  context.sendBroadcast(Intent(HEY_TRIGGER_ACTION).setPackage(pkg))
+}
+
+/** White line-art microphone glyph for the header "hey" button. */
+@Composable
+private fun MicGlyph() {
+  Canvas(modifier = Modifier.size(28.dp)) {
+    val w = size.minDimension
+    val s = w * 0.08f
+    val stroke =
+        Stroke(
+            width = s,
+            cap = androidx.compose.ui.graphics.StrokeCap.Round,
+            join = androidx.compose.ui.graphics.StrokeJoin.Round,
+        )
+    // Capsule mic body.
+    drawRoundRect(
+        color = Color.White,
+        topLeft = Offset(w * 0.38f, w * 0.16f),
+        size = Size(w * 0.24f, w * 0.40f),
+        cornerRadius = CornerRadius(w * 0.12f, w * 0.12f),
+        style = stroke,
+    )
+    // Cradle arc hugging the bottom of the body.
+    drawArc(
+        color = Color.White,
+        startAngle = 20f,
+        sweepAngle = 140f,
+        useCenter = false,
+        topLeft = Offset(w * 0.26f, w * 0.24f),
+        size = Size(w * 0.48f, w * 0.48f),
+        style = stroke,
+    )
+    // Stem + base.
+    drawLine(Color.White, Offset(w * 0.5f, w * 0.72f), Offset(w * 0.5f, w * 0.84f), strokeWidth = s)
+    drawLine(Color.White, Offset(w * 0.38f, w * 0.84f), Offset(w * 0.62f, w * 0.84f), strokeWidth = s)
   }
 }
 
