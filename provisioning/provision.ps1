@@ -11,8 +11,9 @@
     powershell -ExecutionPolicy Bypass -File provision.ps1 -Restore   # undo
     powershell -ExecutionPolicy Bypass -File provision.ps1 -Status    # show state
     powershell -ExecutionPolicy Bypass -File provision.ps1 -OverlayFix # fix Gen-1 installer dialog
+    powershell -ExecutionPolicy Bypass -File provision.ps1 -Alexa      # restore the original Amazon Alexa app
 #>
-param([switch]$Restore, [switch]$Status, [switch]$Apps, [switch]$Installd, [switch]$Shizuku, [switch]$OverlayFix)
+param([switch]$Restore, [switch]$Status, [switch]$Apps, [switch]$Installd, [switch]$Shizuku, [switch]$OverlayFix, [switch]$Alexa)
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -153,23 +154,23 @@ function Start-Installd {
   Warn "Daemon didn't report a heartbeat (the store will fall back to the system installer)"
 }
 function Start-Shizuku {
-  # Lets third-party stores (Aurora's Shizuku installer) install silently on the
-  # Gen-1 Portal+, whose stock installer is broken. Auto-installs Shizuku only on
-  # Gen-1 (API < 29) where it's needed; on newer Portals it's skipped. If Shizuku
-  # is already installed on any model, its server is started below. Like our own
-  # daemon, the server does NOT survive a reboot; re-run with -Shizuku to restart.
+  # Shizuku is a privileged broker started once over ADB. We install + start it on
+  # EVERY Portal: it's broadly useful (Aurora's silent installs; the future
+  # on-device Alexa-restore path that needs the privileged grants) and harmless
+  # where unused. The Gen-1 Portal+ especially needs it because its stock installer
+  # dialog is broken. Like our own daemon, the server does NOT survive a reboot;
+  # re-run with -Shizuku to restart.
   $SZ = "moe.shizuku.privileged.api"
   $installed = (A shell pm list packages $SZ) -match "package:$SZ"
-  $sdk = [int]("$(A shell getprop ro.build.version.sdk)".Trim())
   if (-not $installed) {
-    if ($cfg["SHIZUKU_APK_URL"] -and $sdk -lt 29) {
-      Step "Installing Shizuku (enables Aurora Store etc. on this Gen-1 Portal)"
+    if ($cfg["SHIZUKU_APK_URL"]) {
+      Step "Installing Shizuku (privileged broker - useful on every Portal)"
       $tmp = Join-Path (Split-Path -Parent $cfg["APK_GLOB"]) "shizuku.apk"
       New-Item -ItemType Directory -Force -Path (Split-Path -Parent $tmp) | Out-Null
       try { Invoke-WebRequest $cfg["SHIZUKU_APK_URL"] -OutFile $tmp; A install -r $tmp | Out-Null; Ok "Shizuku installed" }
       catch { Warn "Shizuku install failed - skipping"; Remove-Item $tmp -ErrorAction SilentlyContinue; return }
       Remove-Item $tmp -ErrorAction SilentlyContinue
-    } else { return }  # Not installed and not a Gen-1 (or no URL): nothing to do.
+    } else { return }  # No SHIZUKU_APK_URL configured: nothing to do.
   }
   Step "Starting Shizuku server (for third-party silent installs)"
   # Resolve the version/ABI-specific starter binary at runtime (the install-dir
@@ -322,6 +323,139 @@ function Set-Screensaver {
   Ok "Screensaver = $($cfg["DREAM_SERVICE"])"
 }
 
+# ----- Alexa restore (the "hey" free tier) -----------------------------------
+# Mirrors provision.sh's restore_alexa: reconstruct our patched+signed falcon from
+# the PUBLIC stock APK via our binary diff, install it, apply the privileged grants,
+# then install the wake-word app. Optional, opt-in, NON-FATAL (a failure here never
+# aborts the rest of the provision - we Warn + return, never Die).
+#
+# WINDOWS CAVEAT: unlike macOS, Windows ships no `bspatch`. So either install one
+# and point BSPATCH_EXE at it, or set FALCON_PATCHED_LOCAL to a prebuilt APK. With
+# neither, the falcon step is skipped with guidance (the rest still runs).
+function Get-Sha256($path) { (Get-FileHash -Algorithm SHA256 -Path $path).Hash.ToLower() }
+
+function Restore-Alexa {
+  $fp = if ($cfg["FALCON_PKG"]) { $cfg["FALCON_PKG"] } else { "com.amazon.alexa.multimodal.falcon" }
+  $sim = "$fp/com.amazon.alexa.multimodal.falcon.SIMActivity"
+  $work = Join-Path $ScriptDir "alexa"
+  New-Item -ItemType Directory -Force -Path $work | Out-Null
+  Step "Restoring Amazon Alexa (reviving the original falcon client)"
+
+  # 1. Obtain the patched+signed falcon APK - a local build if given, else
+  #    reconstruct it byte-identically from the public stock APK + our diff.
+  $patched = $null
+  if ($cfg["FALCON_PATCHED_LOCAL"] -and (Test-Path $cfg["FALCON_PATCHED_LOCAL"])) {
+    $patched = $cfg["FALCON_PATCHED_LOCAL"]; Ok "Using local patched falcon ($(Split-Path -Leaf $patched))"
+  } else {
+    $bspatch = $null
+    if ($cfg["BSPATCH_EXE"] -and (Test-Path $cfg["BSPATCH_EXE"])) { $bspatch = $cfg["BSPATCH_EXE"] }
+    elseif (Get-Command bspatch -ErrorAction SilentlyContinue) { $bspatch = (Get-Command bspatch).Source }
+    if (-not $bspatch) { Warn "bspatch not found (Windows ships none). Install it + set BSPATCH_EXE in config.env, or set FALCON_PATCHED_LOCAL to a prebuilt APK. Skipping Alexa."; return }
+    $stock = if ($cfg["FALCON_STOCK_LOCAL"]) { $cfg["FALCON_STOCK_LOCAL"] } else { Join-Path $work "stock-falcon.apk" }
+    if (-not (Test-Path $stock) -or ($cfg["FALCON_STOCK_SHA256"] -and (Get-Sha256 $stock) -ne $cfg["FALCON_STOCK_SHA256"])) {
+      if (-not $cfg["FALCON_STOCK_URL"]) { Warn "No FALCON_STOCK_URL configured - skipping Alexa."; return }
+      Step "Downloading stock falcon (~120 MB) from the public firmware dump"
+      try { Invoke-WebRequest $cfg["FALCON_STOCK_URL"] -OutFile (Join-Path $work "stock-falcon.apk") } catch { Warn "Stock download failed - skipping Alexa."; return }
+      $stock = Join-Path $work "stock-falcon.apk"
+    }
+    if ($cfg["FALCON_STOCK_SHA256"] -and (Get-Sha256 $stock) -ne $cfg["FALCON_STOCK_SHA256"]) { Warn "Stock falcon checksum mismatch - skipping Alexa."; return }
+    $diff = if ($cfg["FALCON_BSDIFF_LOCAL"]) { $cfg["FALCON_BSDIFF_LOCAL"] } else { Join-Path $work "falcon.bsdiff" }
+    if (-not (Test-Path $diff)) {
+      if (-not $cfg["FALCON_BSDIFF_URL"]) { Warn "No falcon patch (FALCON_BSDIFF_URL/LOCAL) - skipping Alexa."; return }
+      Step "Downloading the falcon patch"
+      try { Invoke-WebRequest $cfg["FALCON_BSDIFF_URL"] -OutFile (Join-Path $work "falcon.bsdiff") } catch { Warn "Patch download failed - skipping Alexa."; return }
+      $diff = Join-Path $work "falcon.bsdiff"
+    }
+    Step "Reconstructing the patched falcon (bspatch)"
+    $patchedOut = Join-Path $work "falcon-patched.apk"
+    & $bspatch $stock $patchedOut $diff
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $patchedOut)) { Warn "bspatch failed - skipping Alexa."; return }
+    $patched = $patchedOut
+    if ($cfg["FALCON_RESULT_SHA256"] -and (Get-Sha256 $patched) -ne $cfg["FALCON_RESULT_SHA256"]) { Warn "Reconstructed falcon checksum mismatch (bad stock or diff) - skipping Alexa."; return }
+    Ok "Reconstructed + verified byte-identical"
+  }
+
+  # 2. Install falcon - `install -r` ONLY. NEVER uninstall: wiping falcon's data
+  #    drops its Amazon registration and the next launch mints a NEW ghost device.
+  Step "Installing falcon"
+  $out = (A install -r $patched 2>&1 | Out-String)
+  if ($out -match "Success") { Ok "falcon installed" }
+  elseif ($out -match "INSTALL_FAILED_VERSION_DOWNGRADE") { Ok "falcon already current" }
+  elseif ($out -match "(?i)duplicate") { Warn "Duplicate-permission conflict with com.amazon.dee.app - needs the coexistence build. Skipping."; return }
+  elseif ("$(A shell pm path $fp)".Trim()) { Warn "install -r reported an issue but falcon is present; continuing" }
+  else { Warn "falcon install failed - skipping Alexa."; return }
+
+  # 3. Provision falcon (privileged grants; persist across reboot).
+  Step "Provisioning falcon"
+  A shell pm grant $fp android.permission.READ_PHONE_STATE | Out-Null
+  A shell pm grant $fp android.permission.INTERACT_ACROSS_USERS | Out-Null
+  A shell pm grant $fp android.permission.RECORD_AUDIO | Out-Null
+  A shell settings put secure user_setup_complete 1 | Out-Null
+  A shell appops set $fp SYSTEM_ALERT_WINDOW allow | Out-Null
+  Ok "falcon provisioned"
+
+  # 4. millennium = the "hey" wake-word app (drives falcon hands-free).
+  $mp = if ($cfg["MILLENNIUM_PKG"]) { $cfg["MILLENNIUM_PKG"] } else { "com.millennium" }
+  $mapk = $null
+  if ($cfg["MILLENNIUM_APK_LOCAL"] -and (Test-Path $cfg["MILLENNIUM_APK_LOCAL"])) { $mapk = $cfg["MILLENNIUM_APK_LOCAL"] }
+  elseif ($cfg["MILLENNIUM_APK_URL"]) {
+    Step "Downloading the hey (millennium) app"
+    try { Invoke-WebRequest $cfg["MILLENNIUM_APK_URL"] -OutFile (Join-Path $work "millennium.apk"); $mapk = Join-Path $work "millennium.apk" }
+    catch { Warn "millennium download failed (Alexa text/voice still works; wake word needs it)" }
+  }
+  if ($mapk -and (Test-Path $mapk)) {
+    Step "Installing hey (millennium)"
+    A install -r $mapk | Out-Null; Ok "millennium installed"
+  }
+  if ("$(A shell pm path $mp)".Trim()) { A shell pm grant $mp android.permission.RECORD_AUDIO | Out-Null }
+
+  # 5. Launch falcon, guide the Amazon account link, wait for ReadyState.
+  Step "Launching falcon to connect"
+  A shell am start -n $sim | Out-Null
+  Warn "If this Portal isn't linked to your Amazon account yet, finish the on-screen Alexa sign-in now. (Already-linked devices reconnect automatically.)"
+  Write-Host "  Waiting for Alexa to connect (needs Wi-Fi + a linked account)..." -ForegroundColor DarkGray
+  A logcat -c | Out-Null
+  $ready = $false
+  for ($i = 0; $i -lt 24; $i++) {
+    if (A logcat -d | Select-String "in ReadyState" -Quiet) { $ready = $true; break }
+    Start-Sleep -Seconds 5
+  }
+  if ($ready) {
+    if ("$(A shell pm path $mp)".Trim()) { A shell am start -n "$mp/com.millennium.ui.HeyActivity" | Out-Null }
+    Ok "Alexa connected (ReadyState) - say 'Hey Alexa, what's the weather?'"
+    Write-Host "  Once linked, you can hide falcon's icon from the launcher - it runs headless." -ForegroundColor DarkGray
+  } else {
+    Warn "Alexa didn't connect within ~2 min. Check Wi-Fi + that the Amazon account is linked, then re-run with -Alexa."
+  }
+}
+
+function Maybe-Restore-Alexa {
+  # RESTORE_ALEXA in config.env forces on/off for unattended runs; blank => ask
+  # (only when interactive - a non-interactive run defaults to skipping).
+  $want = $cfg["RESTORE_ALEXA"]
+  if (-not $want) {
+    if ([Environment]::UserInteractive) {
+      Write-Host ""
+      Write-Host "Restore Amazon Alexa on this Portal?" -ForegroundColor White
+      Write-Host "  Revives the original Alexa app - hands-free 'Hey Alexa', with text, voice and visual answers."
+      $ans = Read-Host "  [y/N]"
+      $want = if ($ans -match '^[Yy]') { "true" } else { "false" }
+    } else { $want = "false" }
+  }
+  if ($want -eq "true") { Restore-Alexa }
+}
+
+function Restore-Alexa-Undo {
+  # Remove only OUR wake-word app. Leave falcon installed on purpose:
+  # uninstalling it drops the Amazon registration and mints a new ghost device.
+  $mp = if ($cfg["MILLENNIUM_PKG"]) { $cfg["MILLENNIUM_PKG"] } else { "com.millennium" }
+  if ("$(A shell pm path $mp)".Trim()) {
+    Step "Removing the hey (millennium) wake-word app"
+    A uninstall $mp | Out-Null; Ok "millennium removed"
+    Warn "Amazon Alexa (falcon) is left installed on purpose - uninstalling it would register a NEW device with Amazon. Remove it by hand only if you understand that."
+  }
+}
+
 # ----- per-device stock snapshot (model-agnostic restore) --------------------
 # Written on the device the first time we provision, so restore works on any
 # Portal model and from any computer. config.env STOCK_* are only fallbacks.
@@ -371,6 +505,12 @@ if ($Shizuku) {
 if ($OverlayFix) {
   Wait-Device
   Disable-InstallerOverlay
+  exit 0
+}
+
+if ($Alexa) {
+  Wait-Device
+  Restore-Alexa
   exit 0
 }
 
@@ -435,6 +575,7 @@ if ($Restore) {
   Ok "Presence detector restored"
   Step "Removing Immortal's screen-off device admin"
   A shell dpm remove-active-admin "$($cfg["PKG"])/.AdminReceiver" | Out-Null; Ok "Device admin removed"
+  Restore-Alexa-Undo
   Step "Restoring stock launcher"
   A shell cmd package set-home-activity $cfg["STOCK_HOME"] | Out-Null; Ok "Home restored ($($cfg["STOCK_HOME"]))"
   Step "Restoring stock screensaver"
@@ -464,6 +605,7 @@ Disable-Presence
 Snapshot-Stock
 Set-Launcher
 Set-Screensaver
+Maybe-Restore-Alexa
 A shell input keyevent KEYCODE_HOME | Out-Null
 Write-Host "`n[ok] Done. Your Portal is provisioned." -ForegroundColor Green
 Write-Host "To undo: run provision.ps1 -Restore" -ForegroundColor DarkGray
