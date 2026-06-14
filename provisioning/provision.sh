@@ -473,6 +473,10 @@ sha256() {
 restore_alexa() {
   local FP="${FALCON_PKG:-com.amazon.alexa.multimodal.falcon}"
   local SIM="$FP/com.amazon.alexa.multimodal.falcon.SIMActivity"
+  # The SETUP entry: on a fresh device it runs falcon's OOBE → the Amazon CBL linking code; once
+  # linked it just bootstraps the connection and yields to the launcher. (SIMActivity, by contrast,
+  # only ever shows the debug client — never the sign-in — so we use this for sign-in + connect.)
+  local SETUP="$FP/com.amazon.alexa.multimodal.LaunchActivity"
   local work="$SCRIPT_DIR/alexa"; mkdir -p "$work"
   local patched=""
   step "Restoring Amazon Alexa (reviving the original falcon client)"
@@ -538,6 +542,17 @@ restore_alexa() {
   a shell appops set "$FP" SYSTEM_ALERT_WINDOW allow              >/dev/null 2>&1
   ok "falcon provisioned"
 
+  # 3b. Surface the Amazon sign-in NOW, right after install, so a fresh Portal shows the linking
+  #     code immediately and the user can complete registration WHILE we install the wake app and
+  #     wait to connect — turning a fresh setup into a single pass. (Already-linked Portals just
+  #     reconnect; this launch is harmless for them.) We clear logcat here so the ReadyState we
+  #     watch for below is from this launch onward, not a stale entry from a prior run.
+  step "Opening Alexa to link your Amazon account"
+  a logcat -c >/dev/null 2>&1 || true
+  a shell dumpsys deviceidle whitelist +"$FP" >/dev/null 2>&1   # skip the "run in background?" prompt → straight to the code
+  a shell am start -n "$SETUP" >/dev/null 2>&1
+  printf "  %sIf this Portal isn't linked yet, an Amazon sign-in is now on screen — go to amazon.com/code\n  and enter the code shown. You can do this while the rest of setup runs.%s\n" "$Y" "$N"
+
   # 4. millennium = the "hey" wake-word app (drives falcon hands-free).
   local MP="${MILLENNIUM_PKG:-com.millennium}"
   local mapk="${MILLENNIUM_APK_LOCAL:-}"
@@ -551,34 +566,39 @@ restore_alexa() {
   fi
   a shell pm path "$MP" >/dev/null 2>&1 && a shell pm grant "$MP" android.permission.RECORD_AUDIO >/dev/null 2>&1
 
-  # 5. Launch falcon, guide the Amazon account link, wait for ReadyState.
+  # 5. Wait for ReadyState — EVENT-DRIVEN, not on a timer. falcon is already on screen (3b).
   #
-  # Two cases: an ALREADY-linked Portal reconnects on the first launch (ReadyState in seconds).
-  # A FRESH Portal needs the on-screen Amazon sign-in, AND — once signed in — falcon's first
-  # launch parks in DisconnectState and won't establish the AVS connection on its own; a single
-  # restart kicks it (then ReadyState in ~5s). So we wait in cycles and force-stop+relaunch falcon
-  # between cycles: that catches the fresh case after the user finishes signing in, and is a no-op
-  # for the already-linked case (which connects in cycle 1 before any restart).
-  step "Launching falcon to connect"
-  printf "  %sIf this Portal isn't linked to your Amazon account yet, finish the on-screen Alexa\n  sign-in now.%s (Already-linked devices reconnect automatically.)\n" "$Y" "$N"
-  printf "  %sWaiting for Alexa to connect (needs Wi-Fi + a linked account)…%s\n" "$D" "$N"
-  local cycle i ready=0
-  for cycle in 1 2 3; do
-    [ "$cycle" -gt 1 ] && a shell am force-stop "$FP" >/dev/null 2>&1   # kick a freshly-linked falcon out of DisconnectState
-    a logcat -c >/dev/null 2>&1 || true
-    a shell am start -n "$SIM" >/dev/null 2>&1
-    for i in $(seq 1 12); do
-      if a logcat -d 2>/dev/null | grep -q 'in ReadyState'; then ready=1; break; fi
-      sleep 5
-    done
-    [ "$ready" = 1 ] && break
+  # falcon logs `AccountRegisteredCondition: isMet` the instant the Amazon account is linked, and
+  # NEVER before (the SIM state machine only initializes once there's an account) — so this is a
+  # precise "sign-in just completed" signal that can't fire mid-sign-in. Behaviour:
+  #   • already-linked Portal → connects on its own → we see `in ReadyState` and finish, no restart.
+  #   • fresh Portal → after we see `isMet` it parks in IgnoreWhileDisconnectedState and won't
+  #     connect on its own, so we give it a short grace to self-connect and then force-stop+relaunch
+  #     to kick it (re-kicking if still stuck). We only ever kick AFTER `isMet`, so an in-progress
+  #     sign-in is never interrupted. The overall cap is just a safety net.
+  step "Waiting for Alexa to connect"
+  printf "  %sFinish any on-screen Amazon sign-in (amazon.com/code) — this connects automatically once you do…%s\n" "$D" "$N"
+  local i=0 ready=0 reg_at=-1 last_kick=-100 log
+  while [ "$i" -lt 72 ]; do                                    # ~6 min safety cap (72 × 5s)
+    log="$(a logcat -d 2>/dev/null)"
+    if printf '%s' "$log" | grep -q 'in ReadyState'; then ready=1; break; fi
+    if [ "$reg_at" -lt 0 ] && printf '%s' "$log" | grep -q 'AccountRegisteredCondition: isMet'; then
+      reg_at="$i"; step "Amazon account linked — connecting Alexa"
+    fi
+    # registered + not yet connected: ~20s grace for self-connect, then kick; re-kick every ~40s if stuck.
+    if [ "$reg_at" -ge 0 ] && [ $((i - reg_at)) -ge 4 ] && [ $((i - last_kick)) -ge 8 ]; then
+      a shell am force-stop "$FP" >/dev/null 2>&1
+      a shell am start -n "$SETUP" >/dev/null 2>&1   # bootstraps the connection + yields to the launcher
+      last_kick="$i"
+    fi
+    sleep 5; i=$((i + 1))
   done
   if [ "$ready" = 1 ]; then
     a shell pm path "$MP" >/dev/null 2>&1 && a shell am start -n "$MP/com.millennium.ui.HeyActivity" >/dev/null 2>&1
     ok "Alexa connected (ReadyState) — say \"Hey Alexa, what's the weather?\""
     printf "  %sOnce linked, you can hide falcon's icon from the launcher — it runs headless.%s\n" "$D" "$N"
   else
-    warn "Alexa didn't connect within ~3 min. Check Wi-Fi + that the Amazon account is linked, then re-run './provision.sh --alexa'."
+    warn "Alexa didn't connect within ~6 min. Check Wi-Fi + that the Amazon account is linked, then re-run './provision.sh --alexa'."
   fi
 }
 

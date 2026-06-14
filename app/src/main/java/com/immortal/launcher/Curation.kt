@@ -57,6 +57,9 @@ object Curation {
           "com.facebook.portal.aiservice" to "Settings",
           "com.android.quicksearchbox" to "Settings",
           "com.android.tv.quicksettings" to "Settings", // Portal TV "Picture Mode" — useful, fold in
+          // falcon's Amazon-link app: needed once to register, then useless. Provisioning auto-opens
+          // it for the initial sign-in, so fold it into Settings rather than cluttering the grid.
+          "com.amazon.alexa.multimodal.falcon" to "Settings",
       )
 
   /** Friendlier display names for a few stock apps. */
@@ -66,6 +69,7 @@ object Curation {
           "com.facebook.alohaapps.settings" to "Portal Settings",
           "com.facebook.portal.aiservice" to "AI Service",
           "com.android.quicksearchbox" to "Google Search",
+          "com.amazon.alexa.multimodal.falcon" to "Alexa setup", // it's the account-link app, not the assistant
       )
 
   fun isHidden(

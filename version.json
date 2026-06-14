@@ -1,6 +1,6 @@
 {
-  "versionCode": 37,
-  "versionName": "1.36",
+  "versionCode": 38,
+  "versionName": "1.37",
   "apkUrl": "https://github.com/starbrightlab/immortal/releases/latest/download/immortal.apk",
-  "notes": "Immortal 1.36 — A push-to-talk \"hey\" voice button in the header: tap to wake your assistant (no wake word needed), long-press to choose which assistant. The clock moved to the top-left corner. The provisioning kit now installs Shizuku on every Portal and can restore the original Amazon Alexa app. (Includes the 1.35 changes.)"
+  "notes": "Immortal 1.37 — The Amazon Alexa setup app now lives in the Settings folder (labelled \"Alexa setup\") instead of the home grid — you only need it once, to link your account. The provisioning kit's Alexa setup is smoother too: it shows the amazon.com/code linking screen immediately and connects automatically the moment you finish signing in. (Includes the 1.36 changes.)"
 }
