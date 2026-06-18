@@ -48,50 +48,33 @@ installs → freeze OS updates → set launcher → set screensaver. Each step i
 To ship your own app instead of the sample, replace `apks/app-debug.apk`, drop photos in
 `assets/`, and update `PKG`/`HOME_ACTIVITY`/`DREAM_SERVICE` in `config.env`.
 
-### Silent on-device installs (the install daemon)
+### On-device installs
 
-Provisioning starts a tiny **install daemon** (`installd.sh`) via ADB. It runs as
-the shell user — the same trick [Shizuku](https://github.com/RikkaApps/Shizuku)
-uses — so Immortal's on-device App Store and self-update can install apps
-**silently** (the launcher drops an APK in a queue; the daemon `pm install`s it).
+For Immortal's App Store and self-update to install apps on the Portal at all,
+provisioning **disables Meta's package verifier** (`com.facebook.appverifier`),
+which otherwise blocks non-allowlisted installs, and **grants Immortal the
+install-source permission** (`REQUEST_INSTALL_PACKAGES`) over ADB — the Portal's
+on-device "install unknown apps" toggle is non-functional, so it can't be enabled
+by hand. Installs then go through Android's standard `PackageInstaller`: the store
+hands the APK to the system installer, which shows its confirm dialog.
 
-This is what makes on-device installs work on the **Gen-1 Portal+** (Android 9),
-whose built-in install-confirmation dialog renders as a blank window with no
-visible buttons. The cause is a Meta Runtime Resource Overlay
-(`com.facebook.aloha.rro.niu.android`) that re-themes the framework dialog
-white-on-white — the buttons are there, just invisible (you can blind-tap the
-bottom-right corner to confirm).
-
-Like all non-root helpers (Shizuku included), the daemon **does not survive a
-reboot**. After a reboot, restart it (no full re-provision needed):
-
-```bash
-./provision.sh --installd          # macOS/Linux
-# powershell ... provision.ps1 -Installd   # Windows
-```
-
-### Repairing the stock installer dialog (Gen-1)
-
-Because the daemon doesn't persist across reboots, provisioning **also disables
-the offending overlay** so the Portal's own installer dialog becomes usable
-again — and that change *is* remembered across reboots (the framework stores
-overlay state in `/data/system/overlays.xml`). So when the daemon is down, a
-Gen-1 falls back to the now-visible system dialog instead of pausing installs.
-It's applied with `cmd overlay disable` (immediate; no reboot, so it can't kill
-the running daemon), gated on API < 29, and reversed by `--restore`.
+On the **Gen-1 Portal+** (Android 9) that confirm dialog is broken out of the box —
+a Meta Runtime Resource Overlay (`com.facebook.aloha.rro.niu.android`) re-themes it
+white-on-white, so the text and buttons are invisible. Provisioning **disables that
+overlay**, making the dialog readable again — and unlike a running helper, the change
+persists across reboots (the framework stores overlay state in
+`/data/system/overlays.xml`). It's applied with `cmd overlay disable` (immediate, no
+reboot), gated to API < 29, and reversed by `--restore`. Newer Portals (API ≥ 29) have
+a working dialog and ship no such overlay, so this step is skipped on them.
 
 ```bash
-./provision.sh --overlay-fix       # macOS/Linux (apply on its own)
+./provision.sh --overlay-fix       # macOS/Linux (apply the Gen-1 dialog fix on its own)
 # powershell ... provision.ps1 -OverlayFix   # Windows
 ```
 
 Prefer to leave the stock dialog alone? Set `DISABLE_INSTALLER_OVERLAY=false` in
-`config.env`; then a rebooted Gen-1 with the daemon down pauses new installs until
-you restart the daemon. Newer Portals (API ≥ 29) have a working dialog and ship no
-such overlay, so this step is skipped on them automatically.
-
-When the daemon isn't running, the store falls back to the system installer
-(visible on newer models, and on a Gen-1 once the overlay fix above is applied).
+`config.env` — but then the Gen-1 confirm dialog stays white-on-white and on-device
+installs there won't be usable.
 
 ### Pre-installing apps
 
@@ -128,8 +111,8 @@ You're prompted for a friendly name (e.g. "Living Room Left") unless you preset
 `FLEET_NAME`. After a reboot the agent comes back on its own — nothing to re-arm.
 
 Provisioning deliberately does **not** switch the Portal into raw adb-over-WiFi:
-`adb tcpip` restarts adbd, which would stop Shizuku and the silent-install daemon,
-and it doesn't survive a reboot anyway. The agent is the persistent channel. If
+`adb tcpip` restarts adbd, which would stop Shizuku, and it doesn't survive a
+reboot anyway. The agent is the persistent channel. If
 you occasionally need a raw adb shell or scrcpy mirroring, enable it on demand
 (it pauses those helpers until the next USB run / reboot):
 

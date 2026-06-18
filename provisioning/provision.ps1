@@ -13,7 +13,7 @@
     powershell -ExecutionPolicy Bypass -File provision.ps1 -OverlayFix # fix Gen-1 installer dialog
     powershell -ExecutionPolicy Bypass -File provision.ps1 -Alexa      # restore the original Amazon Alexa app
 #>
-param([switch]$Restore, [switch]$Status, [switch]$Apps, [switch]$Installd, [switch]$Shizuku, [switch]$OverlayFix, [switch]$Fleet, [switch]$WifiAdb, [switch]$Alexa)
+param([switch]$Restore, [switch]$Status, [switch]$Apps, [switch]$Shizuku, [switch]$OverlayFix, [switch]$Fleet, [switch]$WifiAdb, [switch]$Alexa)
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -133,33 +133,12 @@ function Install-Client {
   A install -r -d $apk.FullName | Out-Null
   Ok "Installed $($cfg["PKG"])"
 }
-function Start-Installd {
-  if (-not (Test-Path "installd.sh")) { Warn "installd.sh missing - skipping silent-install daemon"; return }
-  Step "Starting the silent-install daemon"
-  A push installd.sh /data/local/tmp/installd.sh | Out-Null
-  A shell "chmod 755 /data/local/tmp/installd.sh" | Out-Null
-  A shell 'me=$$; for d in /proc/[0-9]*; do p=${d#/proc/}; [ "$p" = "$me" ] && continue; c=$(cat "$d/cmdline" 2>/dev/null | tr "\0" " "); case "$c" in *installd.sh*) kill "$p" 2>/dev/null;; esac; done' | Out-Null
-  # Remove any stale heartbeat so the check below can only pass on a FRESH one
-  # from the daemon we're about to start.
-  A shell "rm -f /sdcard/Android/data/$($cfg['PKG'])/files/installq/.heartbeat" | Out-Null
-  A shell "setsid sh /data/local/tmp/installd.sh /sdcard/Android/data/$($cfg['PKG'])/files/installq >/dev/null 2>&1 &" | Out-Null
-  # The first heartbeat can take a few seconds on a busy device (right after an
-  # app install the FUSE/package services are still churning), so poll instead
-  # of a single fixed-sleep check - a one-shot probe here used to false-fail.
-  for ($i = 0; $i -lt 15; $i++) {
-    $hb = (A shell "cat /sdcard/Android/data/$($cfg['PKG'])/files/installq/.heartbeat 2>/dev/null")
-    if ($hb -match '[0-9]') { Ok "Silent-install daemon running"; return }
-    Start-Sleep -Seconds 1
-  }
-  Warn "Daemon didn't report a heartbeat (the store will fall back to the system installer)"
-}
 function Start-Shizuku {
   # Shizuku is a privileged broker started once over ADB. We install + start it on
   # EVERY Portal: it's broadly useful (Aurora's silent installs; the future
   # on-device Alexa-restore path that needs the privileged grants) and harmless
   # where unused. The Gen-1 Portal+ especially needs it because its stock installer
-  # dialog is broken. Like our own daemon, the server does NOT survive a reboot;
-  # re-run with -Shizuku to restart.
+  # dialog is broken. The server does NOT survive a reboot; re-run with -Shizuku to restart.
   $SZ = "moe.shizuku.privileged.api"
   $installed = (A shell pm list packages $SZ) -match "package:$SZ"
   if (-not $installed) {
@@ -188,7 +167,7 @@ function Start-Shizuku {
     if ($up -match '\d') { Ok "Shizuku server running"; return }
     Start-Sleep -Seconds 1
   }
-  Warn "Shizuku server didn't stay up (some firmware kills it). Open the Shizuku app once and tap Start, or set Aurora Store to its Session installer (it routes through Immortal's silent-install daemon)."
+  Warn "Shizuku server didn't stay up (some firmware kills it). Open the Shizuku app once and tap Start, or set Aurora Store to its Session installer (it routes through the system installer, usable via the Gen-1 overlay fix)."
 }
 function Install-Apps {
   # Silent adb-install of configured apps - the reliable path on models whose
@@ -231,9 +210,9 @@ function Apply-SystemTweaks {
   # reveals it transiently. Eliminates the white-on-white problem on
   # light-background apps (Aurora, Android Settings, etc.). Android 5.0+.
   A shell settings put global policy_control "immersive.status=*" | Out-Null
-  # Force system-wide dark mode. On Android 9 (Portal+) some apps respond; on
-  # Android 10 (Portal Go) it's a first-class feature - far more apps follow it.
-  A shell settings put secure ui_night_mode 2 | Out-Null
+  # (Forced dark mode was removed: it was a redundant second attempt at the Gen-1
+  # white-on-white installer dialog - Disable-InstallerOverlay is the real fix - and
+  # had unaudited side effects on stock UI. The status-bar hide above stays.)
   # Allow apps to call internal Android APIs blocked by the hidden-API blacklist.
   # 1 = warn-only (calls succeed; logcat warning only). Covers pre-P and P+ targets.
   A shell settings put global hidden_api_policy_pre_p_apps 1 | Out-Null
@@ -258,6 +237,11 @@ function Grant-Perms {
   # the screensaver (~2 min in, a quirk of Meta's power manager) even if another
   # app is in the foreground.
   A shell appops set $cfg["PKG"] SYSTEM_ALERT_WINDOW allow | Out-Null
+  # Lets Immortal install apps via the system PackageInstaller (the App Store / self-update
+  # path now that the silent-install daemon is gone). The Portal's on-device "install unknown
+  # apps" toggle is non-functional, so grant the source op directly here; with the Gen-1
+  # installer-overlay fix the confirm dialog is then visible and usable.
+  A shell appops set $cfg["PKG"] REQUEST_INSTALL_PACKAGES allow | Out-Null
   # Device admin (force-lock only): lets Immortal turn the screen off for its idle
   # and overnight sleep features via lockNow(). Harmless if it can't be set.
   A shell dpm set-active-admin "$($cfg["PKG"])/.AdminReceiver" | Out-Null
@@ -314,7 +298,21 @@ function Disable-InstallerOverlay {
   }
 }
 function Disable-Ota {
-  if ($cfg["DISABLE_OTA"] -ne "true") { return }
+  # Ask the user (default YES). Blocking OTA stops a future Meta update from undoing this
+  # setup, but also forgoes OS/security updates. DISABLE_OTA forces true/false unattended;
+  # blank => ask interactively (and default to blocking on a non-interactive run).
+  $want = $cfg["DISABLE_OTA"]
+  if (-not $want) {
+    if ([Environment]::UserInteractive) {
+      Write-Host ""
+      Write-Host "Block Meta OS updates on this Portal?" -ForegroundColor White
+      Write-Host "  A future Meta OTA could undo this setup (re-enable the verifier, replace the"
+      Write-Host "  launcher). Blocking prevents that, but also stops OS / security updates."
+      $ans = Read-Host "  [Y/n]"
+      $want = if ($ans -match '^[Nn]') { "false" } else { "true" }
+    } else { $want = "true" }
+  }
+  if ($want -ne "true") { Warn "Leaving Meta OS updates enabled"; return }
   Step "Disabling Meta OS updates (so a future OTA can't undo this setup)"
   foreach ($p in ($cfg["OTA_PACKAGES"] -split "\s+")) { if ($p) { A shell "pm disable-user --user 0 $p 2>/dev/null" | Out-Null } }
   Ok "OS updates disabled"
@@ -503,6 +501,11 @@ function Restore-Alexa {
 }
 
 function Maybe-Restore-Alexa {
+  # A9-and-below only. A10+ hard-blocks background mic for sideloaded apps, so falcon never
+  # gets audio - skip the question entirely on newer Portals (it used to appear then no-op
+  # inside Restore-Alexa, confusing on the Portal Go). Override: ALEXA_FORCE_A10=1.
+  $sdk = 0; try { $sdk = [int]("$(A shell getprop ro.build.version.sdk)".Trim()) } catch {}
+  if ($sdk -ge 29 -and $env:ALEXA_FORCE_A10 -ne "1") { return }
   # RESTORE_ALEXA in config.env forces on/off for unattended runs; blank => ask
   # (only when interactive - a non-interactive run defaults to skipping).
   $want = $cfg["RESTORE_ALEXA"]
@@ -626,17 +629,17 @@ function Record-FleetInventory($name, $ip, $token, $port) {
 
 function Enable-WifiAdbNow {
   # ON-DEMAND ONLY (not part of provisioning). Raw adb-over-WiFi for power-user
-  # shell / scrcpy. Caveats: `adb tcpip` restarts adbd, pausing Shizuku + the
-  # install daemon until the next USB run or reboot, and it doesn't survive a
-  # reboot. The Fleet AGENT is the persistent channel (incl. files + logcat).
+  # shell / scrcpy. Caveats: `adb tcpip` restarts adbd, pausing Shizuku until the
+  # next USB run or reboot, and it doesn't survive a reboot. The Fleet AGENT is the
+  # persistent channel (incl. files + logcat).
   $ip = ""
   if ("$(A shell "ip -f inet addr show wlan0 2>/dev/null")" -match 'inet (\d+\.\d+\.\d+\.\d+)') { $ip = $Matches[1] }
   if (-not $ip) { Die "This Portal isn't on WiFi." }
-  Step "Enabling adb-over-WiFi (temporary; pauses Shizuku + the install daemon)"
+  Step "Enabling adb-over-WiFi (temporary; pauses Shizuku)"
   A tcpip 5555 *> $null
   if ($?) {
     Ok "adb-over-WiFi live - connect with: adb connect $($ip):5555"
-    Warn "Shizuku and the silent-install daemon are now paused; re-run the kit over USB (or reboot) to restore them."
+    Warn "Shizuku is now paused; re-run the kit over USB (or reboot) to restore it."
   } else { Die "adb tcpip 5555 failed." }
 }
 
@@ -650,12 +653,6 @@ if ($Fleet) {
 if ($WifiAdb) {
   Wait-Device
   Enable-WifiAdbNow
-  exit 0
-}
-
-if ($Installd) {
-  Wait-Device
-  Start-Installd
   exit 0
 }
 
@@ -700,7 +697,7 @@ if ($Status) {
   Write-Host "  verifier:    $(if ($disabled) {'disabled'} else {'enabled'})"
   $ovfix = "$(A shell settings get global immortal_overlay_fix)".Trim()
   Write-Host "  installer dialog: $(if ($ovfix -eq '1') {'fixed (overlay disabled)'} else {'stock'})"
-  $ota = (A shell pm list packages -d | Select-String "alohaotasetup")
+  $ota = (A shell pm list packages -d | Select-String "alohaotasetup|otaui")
   Write-Host "  OS updates:  $(if ($ota) {'disabled'} else {'enabled'})"
   $client = "$(A shell pm list packages $cfg["PKG"])".Trim()
   Write-Host "  client:      $(if ($client) {'installed'} else {'not installed'})"
@@ -737,7 +734,15 @@ if ($Restore) {
   A shell pm enable $cfg["PRESENCE_PKG"] | Out-Null
   Ok "Presence detector restored"
   Step "Removing Immortal's screen-off device admin"
-  A shell dpm remove-active-admin "$($cfg["PKG"])/.AdminReceiver" | Out-Null; Ok "Device admin removed"
+  # Android refuses to let the shell force-remove a non-test device admin, so this
+  # usually fails on a real device - don't claim success when it didn't. The active
+  # admin also blocks `adb uninstall` until it's deactivated on-device.
+  $admOut = "$(A shell dpm remove-active-admin "$($cfg["PKG"])/.AdminReceiver" 2>&1)"
+  if ($admOut -match "success|removed") { Ok "Device admin removed" }
+  else {
+    Warn "Couldn't remove the device admin from here (Android blocks shell removal of a non-test admin)."
+    Write-Host "  To fully remove Immortal: on the Portal, deactivate it under Settings > device admin apps, then run: adb uninstall $($cfg["PKG"])" -ForegroundColor DarkGray
+  }
   A shell cmd notification disallow_listener "$($cfg["PKG"])/com.immortal.launcher.MediaNotificationListenerService" | Out-Null
   A shell "rm -f /sdcard/Android/data/$($cfg["PKG"])/files/boot_apps.txt" | Out-Null
   Restore-Alexa-Undo
@@ -757,7 +762,6 @@ Write-Host "This will modify your Portal: install an app, replace the home scree
 Write-Host "and disable Meta's app-install verifier. Run with -Restore to undo.`n" -ForegroundColor DarkGray
 Wait-Device
 Install-Client
-Start-Installd
 Start-Shizuku
 Install-Apps
 Push-Assets

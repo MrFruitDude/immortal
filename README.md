@@ -35,19 +35,18 @@ services. Touch models and the remote-driven **Portal TV** are both supported.
   bridges to the TV's stock home, and an Immortal tile that appears on that stock home so you can
   hop back.
 - **Universal installer** — on the Gen-1 Portal+ (Android 9) the *built-in* Android installer
-  dialog is broken (renders with no buttons), so sideloading normally fails. Immortal ships a
-  shell-privileged silent-install daemon (started by the kit) that fixes this for the whole
-  device: the store and self-update use it, an **"Install with Immortal"** handler
-  (`ApkInstallActivity`) catches any APK you open from Chrome or a file manager (set it as the
-  default and those installs go silent), and an **"Install an APK"** browser (`ApkBrowserActivity`)
-  lists APKs in your Downloads. The kit also **repairs the stock dialog itself** by disabling the
-  Meta display overlay that renders it white-on-white — a change that, unlike the daemon, survives a
-  reboot — so even with the daemon down a Gen-1 falls back to the now-visible system installer. For
-  Play-Store apps via **Aurora Store**, use Aurora's *Shizuku* installer together with Shizuku
+  dialog is broken (renders white-on-white with no visible buttons), so sideloading normally fails.
+  The provisioning kit fixes this for the whole device by **disabling the Meta display overlay**
+  (`com.facebook.aloha.rro.niu.android`) that re-themes the dialog white-on-white — a change that
+  survives a reboot — so the stock installer dialog becomes usable. Immortal's store and self-update
+  then install through Android's standard installer; an **"Install with Immortal"** handler
+  (`ApkInstallActivity`) catches any APK you open from Chrome or a file manager, and an **"Install an
+  APK"** browser (`ApkBrowserActivity`) lists APKs in your Downloads. (The kit also grants Immortal
+  the install-source permission, since the Portal's on-device "install unknown apps" toggle doesn't
+  work.) For Play-Store apps via **Aurora Store**, use Aurora's *Shizuku* installer with Shizuku
   (`provision.sh --shizuku`) — see
-  [Play-Store apps on a first-gen Portal](#play-store-apps-via-aurora-on-a-first-gen-portal) below;
-  Aurora's own Session/Native installers can't get past the broken Gen-1 dialog. Newer Portals have
-  a working installer and don't need any of this.
+  [Play-Store apps on a first-gen Portal](#play-store-apps-via-aurora-on-a-first-gen-portal) below.
+  Newer Portals have a working installer and don't need the Gen-1 fix.
 - **Self-update** (`UpdateManager`) — Immortal polls [`version.json`](version.json); when it
   advertises a higher `versionCode`, it downloads and installs the new build over itself. No
   cable, no laptop.

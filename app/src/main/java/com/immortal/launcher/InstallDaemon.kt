@@ -85,18 +85,6 @@ object InstallDaemon {
       isPaused(legacyInstaller(), isAvailable(context), installerDialogFixed(context))
 
   /**
-   * Android-10 model with the daemon down. Installs aren't *blocked* here — the
-   * system installer dialog still works for most apps — but they're no longer
-   * SILENT, and that dialog parse-fails ("There was a problem parsing the
-   * package") on some apps (Play-store split APKs, a few others) on Portal's
-   * Android 10. The daemon avoids both problems, but it doesn't survive a reboot.
-   * We surface this so the drop to the system dialog isn't a silent mystery, and
-   * point the user at the one-tap fix (reconnect + re-run the installer).
-   */
-  fun silentInstallOffline(context: Context): Boolean =
-      !legacyInstaller() && !isAvailable(context)
-
-  /**
    * Queue [apk] for the daemon and block (on a background thread) until it
    * reports a result or [timeoutMs] elapses. Returns true on success.
    */

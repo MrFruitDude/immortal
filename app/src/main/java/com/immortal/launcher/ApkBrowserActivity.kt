@@ -108,7 +108,6 @@ private fun ApkBrowserScreen() {
             style = MaterialTheme.typography.bodyMedium,
         )
         if (InstallDaemon.installPaused(context)) PausedNote()
-        else if (InstallDaemon.silentInstallOffline(context)) SilentOffNote()
       }
       items(apks, key = { it.file.absolutePath }) { a ->
         ApkRow(a, status[a.file.absolutePath]) {
@@ -116,14 +115,16 @@ private fun ApkBrowserScreen() {
           when {
             InstallDaemon.installPaused(context) ->
                 status[key] = "Paused — connect to your computer to add apps"
-            InstallDaemon.isAvailable(context) -> {
+            else -> {
+              // Install via the system PackageInstaller — it surfaces the confirm dialog
+              // (readable once the Gen-1 overlay fix is applied; InstallConfirmService
+              // auto-taps it where enabled).
               status[key] = "Installing…"
               thread {
-                val ok = InstallDaemon.install(context, a.file, a.pkg)
+                val ok = HeadlessInstaller.install(context, a.file, a.pkg)
                 status[key] = if (ok) "Installed ✓" else "Install failed"
               }
             }
-            else -> status[key] = "Start the install helper, then try again"
           }
         }
       }
@@ -138,29 +139,11 @@ private fun PausedNote() {
       colors = CardDefaults.cardColors(containerColor = Color(0x33FFB300)),
   ) {
     Text(
-        "Installing new apps is paused. On first-gen Portals this happens after a reboot — " +
-            "connect to your computer and run the Immortal installer again to add apps. " +
+        "Installing apps needs the installer-dialog fix that Immortal's setup applies on " +
+            "first-gen Portals. Connect to your computer and run the Immortal installer. " +
             "Everything else keeps working.",
         style = MaterialTheme.typography.bodySmall,
         color = Color(0xFFFFD180),
-        modifier = Modifier.padding(16.dp),
-    )
-  }
-}
-
-@Composable
-private fun SilentOffNote() {
-  Card(
-      modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-      colors = CardDefaults.cardColors(containerColor = Color(0x332E6BE6)),
-  ) {
-    Text(
-        "Silent install is off (the helper stops after a reboot), so APKs install through " +
-            "the system dialog — and some may show “There was a problem parsing the package.” " +
-            "Reconnect to your computer and run the Immortal installer again to restore " +
-            "silent, one-tap installs.",
-        style = MaterialTheme.typography.bodySmall,
-        color = Color(0xFF9EC1FF),
         modifier = Modifier.padding(16.dp),
     )
   }

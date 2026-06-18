@@ -1,0 +1,36 @@
+name: Provisioning scripts
+
+# Catch syntax errors in the provisioning kit before they reach users — bash and
+# (especially) PowerShell, which has historically broken on release without anyone
+# noticing until Windows users hit it.
+on:
+  pull_request:
+    paths:
+      - "provisioning/provision.sh"
+      - "provisioning/provision.ps1"
+  push:
+    branches: [main]
+    paths:
+      - "provisioning/provision.sh"
+      - "provisioning/provision.ps1"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: provision.sh — bash syntax
+        run: bash -n provisioning/provision.sh
+
+      - name: provision.ps1 — PowerShell parse (pwsh ships on the runner)
+        shell: pwsh
+        run: |
+          $errs = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path provisioning/provision.ps1).Path, [ref]$null, [ref]$errs)
+          if ($errs) {
+            $errs | ForEach-Object { Write-Error "line $($_.Extent.StartLineNumber): $($_.Message)" }
+            exit 1
+          }
+          Write-Host "provision.ps1 parses clean"
