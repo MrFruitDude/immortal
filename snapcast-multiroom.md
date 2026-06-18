@@ -3,8 +3,14 @@
 Synchronized, whole-home music across the Portal devices already running Immortal: play
 the same audio, in sync, in every room — and manage which rooms are playing from one place.
 This document records the architecture we settled on, what we reuse versus build, and the
-phased path to get there. It's a design note, not a built feature yet; the only thing shipped
-so far is the stock **Snapcast** client in the App Store, for testing (see *Phase 0*).
+phased path to get there.
+
+**Status:** the audio path (stock **Snapcast** app for synced playback, with Music Assistant
+as the server/source manager) is validated on real Portals, and the launcher now ships an
+in-app **multi-room now-playing** layer: it reads the playing group's track off the snapserver,
+shows it on the now-playing card + the device's media controls on *every* Portal (not just the
+one driving playback), and forwards play/pause/skip to Music Assistant. Settings live under
+*Immortal → Multi-room audio*. See *Licensing* for why this stays MIT.
 
 ## Goal
 
@@ -96,10 +102,12 @@ only trade-off is that you *start* Apple Music playback from the Apple device, n
 in-room UI (once it's playing, room grouping/volume still work normally). Local library and
 Spotify are the sources controllable directly from the room UI.
 
-## Client side — what we build (the Immortal companion app)
+## Client side — what we build
 
-A **separate** app — working name *Immortal Snapcast* — that owns the native player. Immortal
-the launcher integrates it by **intent**, not by linking its code (see *Licensing*).
+The synced audio is the **stock Snapcast app**'s job (it owns the GPL player; see *Licensing*).
+The launcher adds an in-app **multi-room now-playing + control** layer — a foreground service
+that reads the snapserver for the group's track, publishes it as a MediaSession, and forwards
+transport to Music Assistant. The responsibilities below describe that layer.
 
 ### Responsibilities
 
@@ -326,19 +334,23 @@ So repair is two layers, both anchored on the Portal:
 - **Sync realism.** Android-over-WiFi is the hardest client to keep tight; expect to tune
   buffer and per-model latency. Validate before over-promising.
 
-## Licensing — important
+## Licensing
 
-`snapclient`/Snapcast is **GPL-3.0**; Immortal is **MIT**. We **cannot** compile or bundle
-the native `snapclient` *into* `com.immortal.launcher` without forcing the whole launcher to
-become GPL. Therefore:
+`snapclient`/Snapcast is **GPL-3.0**; Immortal is **MIT**. The boundary that keeps the
+launcher MIT is simple and absolute: **the launcher never bundles `snapclient`.** The synced
+audio is rendered by the **standalone stock Snapcast app** (`de.badaix.snapcast`, installed
+from the App Store), which owns the GPL binary in its own process.
 
-- The player is a **separate, GPL-licensed companion app** that owns the `snapclient` binary.
-- Immortal **drives and presents** it over **intents** — a tile, a settings screen, status —
-  but never links its code.
+Everything the launcher does for multi-room is original MIT code that talks over the network
+and to Android's media APIs — never linking GPL code:
 
-To the user it's one integrated feature; legally and architecturally it's two apps. The
-companion installs silently through Immortal's own App Store / install daemon like any other
-catalog app.
+- Now-playing metadata is read from the snapserver's JSON-RPC **control protocol** over a
+  socket (speaking a protocol to a GPL program is not a derivative work).
+- Transport is sent to **Music Assistant's** WebSocket API.
+- The track is published as a standard Android **MediaSession**.
+
+So multi-room is two apps — the GPL Snapcast player and the MIT launcher — that coexist on
+the device; the launcher drives and presents, the Snapcast app plays the audio.
 
 ## Phased plan
 
