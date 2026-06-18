@@ -934,7 +934,7 @@ private fun MiniPlayer(state: NowPlayingState, modifier: Modifier = Modifier) {
 
 @Composable
 private fun PlayPauseGlyph(playing: Boolean) {
-  Canvas(modifier = Modifier.size(18.dp)) {
+  Canvas(modifier = Modifier.size(30.dp)) {
     val w = size.minDimension
     if (playing) {
       val barW = w * 0.20f
