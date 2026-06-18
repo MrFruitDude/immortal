@@ -232,7 +232,7 @@ function Apply-SystemTweaks {
   # light-background apps (Aurora, Android Settings, etc.). Android 5.0+.
   A shell settings put global policy_control "immersive.status=*" | Out-Null
   # Force system-wide dark mode. On Android 9 (Portal+) some apps respond; on
-  # Android 10 (Portal Go) it's a first-class feature — far more apps follow it.
+  # Android 10 (Portal Go) it's a first-class feature - far more apps follow it.
   A shell settings put secure ui_night_mode 2 | Out-Null
   # Allow apps to call internal Android APIs blocked by the hidden-API blacklist.
   # 1 = warn-only (calls succeed; logcat warning only). Covers pre-P and P+ targets.
@@ -571,7 +571,7 @@ function Enable-Fleet {
     Start-Sleep -Seconds 1
   }
   $token = if ($json -match '"token":"([0-9a-f]+)"') { $Matches[1] } else { "" }
-  if (-not $token) { Warn "Fleet agent didn't report a token — open Immortal once, then re-run provision.ps1 -Fleet"; return }
+  if (-not $token) { Warn "Fleet agent didn't report a token - open Immortal once, then re-run provision.ps1 -Fleet"; return }
   if (-not $name -and $json -match '"name":"([^"]*)"') { $name = $Matches[1] }
   $port = if ($json -match '"port":([0-9]+)') { $Matches[1] } elseif ($cfg["FLEET_AGENT_PORT"]) { $cfg["FLEET_AGENT_PORT"] } else { "8723" }
 
@@ -585,7 +585,7 @@ function Enable-Fleet {
 }
 
 function Record-FleetInventory($name, $ip, $token, $port) {
-  # One file per device (keyed by serial) under fleet/ — contains the agent TOKEN,
+  # One file per device (keyed by serial) under fleet/ - contains the agent TOKEN,
   # so fleet/ is gitignored.
   $serial = if ($env:ANDROID_SERIAL) { $env:ANDROID_SERIAL } else { "$(A get-serialno)".Trim() }
   $model = "$(A shell getprop ro.product.model)".Trim()
@@ -617,7 +617,7 @@ function Enable-WifiAdbNow {
   Step "Enabling adb-over-WiFi (temporary; pauses Shizuku + the install daemon)"
   A tcpip 5555 *> $null
   if ($?) {
-    Ok "adb-over-WiFi live — connect with: adb connect $($ip):5555"
+    Ok "adb-over-WiFi live - connect with: adb connect $($ip):5555"
     Warn "Shizuku and the silent-install daemon are now paused; re-run the kit over USB (or reboot) to restore them."
   } else { Die "adb tcpip 5555 failed." }
 }
