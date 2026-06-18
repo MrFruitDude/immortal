@@ -48,6 +48,16 @@ class MultiRoomService : Service() {
   @Volatile private var lastCover: Bitmap? = null
   @Volatile private var userPaused = false
 
+  // Two now-playing sources, merged in [effective]: Snapcast carries metadata for MA's own
+  // library/radio streams (via control.py); MA's API fills in for streams that don't — an
+  // AirPlay receiver bridged to the group surfaces a bare Snapcast stream, so its metadata
+  // only exists in MA's player state. We dedupe so the MA poll doesn't re-fetch art each tick.
+  @Volatile private var snapState: NowPlayingState? = null
+  @Volatile private var maState: NowPlayingState? = null
+  @Volatile private var lastEffectiveKey: String? = null
+  @Volatile private var polling = false
+  private var maPoller: Thread? = null
+
   override fun onCreate() {
     super.onCreate()
     createChannel()
@@ -79,8 +89,9 @@ class MultiRoomService : Service() {
                     MultiRoomStatus.text =
                         if (connected) "Connected to $host" else "Connecting to $host…"
                   }
-                }) { s -> onState(s) }
+                }) { s -> onSnapState(s) }
             .also { it.start() }
+    startMaPoller()
     updateStatus("Linked to $host")
   }
 
@@ -97,6 +108,64 @@ class MultiRoomService : Service() {
             ?.hostAddress
       }
           .getOrNull()
+
+  private fun onSnapState(s: NowPlayingState) = main.post { snapState = s; applyEffective() }
+
+  private fun onMaState(s: NowPlayingState) = main.post { maState = s; applyEffective() }
+
+  /**
+   * Merge the two sources and push the result to the session, skipping no-op repeats (the MA
+   * poll re-reports the same track every few seconds). Runs on main so the dedupe is race-free.
+   */
+  private fun applyEffective() {
+    val eff = effective()
+    val key = "${eff.state}|${eff.title}|${eff.artist}|${eff.artUrl}"
+    if (key == lastEffectiveKey) return
+    lastEffectiveKey = key
+    onState(eff)
+  }
+
+  /** Snapcast wins whenever its stream carries a track (MA library/radio via control.py); MA's
+   *  API fills in otherwise — notably an AirPlay receiver bridged to the group. */
+  private fun effective(): NowPlayingState {
+    fun NowPlayingState.hasTrack() =
+        title.isNotBlank() && (state == PlaybackState.PLAYING || state == PlaybackState.PAUSED)
+    snapState?.let { if (it.hasTrack()) return it }
+    maState?.let { if (it.hasTrack()) return it }
+    return NowPlayingState(PlaybackState.IDLE)
+  }
+
+  /** Poll MA for our player's current track (the AirPlay fill-in). No-op without MA creds —
+   *  Snapcast-only Portals keep working exactly as before. */
+  private fun startMaPoller() {
+    stopMaPoller()
+    if (ImmortalSettings.maUser(this).isBlank()) return
+    polling = true
+    maPoller =
+        Thread(
+                {
+                  while (polling) {
+                    val s =
+                        runCatching {
+                              MaControl.nowPlaying(
+                                  applicationContext, client?.ourClientId, client?.ourClientName)
+                            }
+                            .getOrDefault(NowPlayingState(PlaybackState.IDLE))
+                    if (polling) onMaState(s)
+                    runCatching { Thread.sleep(POLL_MA_MS) }
+                  }
+                },
+                "ma-nowplaying")
+            .apply {
+              isDaemon = true
+              start()
+            }
+  }
+
+  private fun stopMaPoller() {
+    polling = false
+    maPoller = null
+  }
 
   /** Fetch art off the control thread, then mirror the track into the session on main. */
   private fun onState(s: NowPlayingState) {
@@ -196,6 +265,7 @@ class MultiRoomService : Service() {
 
   override fun onDestroy() {
     MultiRoomStatus.text = "Off"
+    stopMaPoller()
     client?.stop()
     art.shutdownNow()
     runCatching {
@@ -243,6 +313,7 @@ class MultiRoomService : Service() {
     private const val CHANNEL = "immortal_multiroom"
     private const val NOTIF_ID = 5022
     private const val PORT = 1705 // snapserver JSON-RPC control port
+    private const val POLL_MA_MS = 4000L // how often to poll MA for the AirPlay-source track
 
     /** The standalone Snapcast player that actually renders the synced audio. The
      *  multi-room now-playing UI is gated on this being installed. */

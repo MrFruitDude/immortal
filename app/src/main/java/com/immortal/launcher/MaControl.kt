@@ -67,6 +67,82 @@ object MaControl {
     }
   }
 
+  /**
+   * What OUR player is currently playing, read from MA's WebSocket API (the same source MA's
+   * own UI shows). This is the fill-in for sources whose metadata never reaches the Snapcast
+   * stream — notably an AirPlay receiver bridged to the group, where snapserver sees a bare
+   * stream with no metadata at all. Returns a PLAYING/PAUSED state with the track, or IDLE
+   * when our player isn't actively playing / MA is unreachable / no credentials are set.
+   *
+   * Library and radio content MA plays already carries metadata in the Snapcast stream
+   * ([SnapcastControlClient] reads it without credentials); this covers the streams that don't.
+   * Blocking — call off the main thread.
+   */
+  fun nowPlaying(context: Context, clientId: String?, clientName: String?): NowPlayingState {
+    val idle = NowPlayingState(PlaybackState.IDLE)
+    val host = ImmortalSettings.snapcastHost(context)
+    val user = ImmortalSettings.maUser(context)
+    val pass = ImmortalSettings.maPass(context)
+    if (host.isBlank() || user.isBlank() || pass.isBlank()) return idle
+    val ws = MaWebSocket(host, MA_PORT)
+    if (!runCatching { ws.connect() }.getOrDefault(false)) return idle
+    return try {
+      ws.readText() // server hello
+      if (!authorize(ws, user, pass)) return idle
+      send(ws, "players/all", null)
+      val r = await(ws, "players/all") ?: return idle
+      parseNowPlaying(r, clientId, clientName)
+    } catch (t: Throwable) {
+      Log.w(TAG, "MA now-playing failed: ${t.message}")
+      idle
+    } finally {
+      ws.close()
+    }
+  }
+
+  /** Pick our player out of `players/all` and read its current track (its sync leader's, if
+   *  grouped). Extracted from the socket so the field mapping is unit-testable. */
+  internal fun parseNowPlaying(playersAllJson: String, clientId: String?, clientName: String?): NowPlayingState {
+    val idle = NowPlayingState(PlaybackState.IDLE)
+    val arr = JSONObject(playersAllJson).optJSONArray("result") ?: return idle
+    val byId = HashMap<String, JSONObject>()
+    var ours: JSONObject? = null
+    for (i in 0 until arr.length()) {
+      val p = arr.getJSONObject(i)
+      byId[p.optString("player_id")] = p
+      val pid = p.optString("player_id")
+      val name = p.optString("display_name")
+      if ((clientId != null && pid == clientId) || (clientName != null && name == clientName)) ours = p
+    }
+    val me = ours ?: return idle
+    // When synced, the queue + current track live on the group / leader player.
+    val leaderId =
+        me.optString("active_group").ifBlank { me.optString("synced_to") }.ifBlank { me.optString("player_id") }
+    val leader = byId[leaderId] ?: me
+    return stateOf(leader) ?: stateOf(me) ?: idle
+  }
+
+  /** Build a now-playing state from a player's `current_media` + `state`, or null if it isn't
+   *  actively playing / has no track. */
+  private fun stateOf(p: JSONObject): NowPlayingState? {
+    val ps =
+        when (p.optString("state").lowercase()) {
+          "playing" -> PlaybackState.PLAYING
+          "paused" -> PlaybackState.PAUSED
+          else -> return null // idle / off — not surfaced
+        }
+    val cm = p.optJSONObject("current_media") ?: return null
+    val title = cm.optString("title").takeIf { it.isNotBlank() } ?: return null
+    return NowPlayingState(
+        state = ps,
+        title = title,
+        artist = cm.optString("artist"),
+        album = cm.optString("album"),
+        artUrl = cm.optString("image_url").ifBlank { cm.optString("image") },
+        durationMs = (cm.optDouble("duration", 0.0) * 1000).toLong(),
+        source = "ma")
+  }
+
   /** Map a media-session transport action to MA, off the main thread. */
   fun command(context: Context, cmd: String, clientId: String?, clientName: String?) {
     val host = ImmortalSettings.snapcastHost(context)
