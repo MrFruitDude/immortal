@@ -52,7 +52,10 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -426,6 +429,21 @@ private fun MultiRoomNavRow(onOpen: () -> Unit) {
  * forwarded to Music Assistant. The in-launcher relay reads the snapserver for metadata;
  * the MA login is needed only to send transport. Back returns to the main settings page.
  */
+/** A numbered step in the multi-room setup guide. */
+@Composable
+private fun MultiRoomStep(n: String, text: String) {
+  Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+    Text(
+        "$n.",
+        color = Color(0xFF8AB4F8),
+        fontSize = 14.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(end = 10.dp),
+    )
+    Text(text, color = Color(0xFFB8B8B8), fontSize = 14.sp, lineHeight = 20.sp)
+  }
+}
+
 @Composable
 private fun MultiRoomScreen(onBack: () -> Unit) {
   val context = LocalContext.current
@@ -436,6 +454,11 @@ private fun MultiRoomScreen(onBack: () -> Unit) {
 
   val firstFocus = remember { FocusRequester() }
   LaunchedEffect(Unit) { runCatching { firstFocus.requestFocus() } }
+  // Chain the text fields so the keyboard's "Next" jumps to the following field instead of
+  // closing — the IP field focuses the username, which focuses the password.
+  val focusManager = LocalFocusManager.current
+  val userFocus = remember { FocusRequester() }
+  val passFocus = remember { FocusRequester() }
 
   Column(
       modifier =
@@ -477,6 +500,28 @@ private fun MultiRoomScreen(onBack: () -> Unit) {
           fontSize = 16.sp,
           modifier = Modifier.padding(top = 6.dp),
       )
+      Spacer(Modifier.size(22.dp))
+      Card {
+        Column(modifier = Modifier.padding(18.dp)) {
+          Text("Setting it up", color = Color.White, fontSize = 17.sp)
+          Text(
+              "Group your Portals into one perfectly in-sync speaker system:",
+              color = Color(0xFF9A9A9A),
+              fontSize = 13.sp,
+              modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
+          )
+          MultiRoomStep(
+              "1",
+              "Install and set up Music Assistant as a server on your home network. New to Music " +
+                  "Assistant? Learn more at music-assistant.io")
+          MultiRoomStep(
+              "2",
+              "Install Snapcast from the Immortal App Store, and point it at your Music Assistant " +
+                  "server.")
+          MultiRoomStep(
+              "3", "Turn on the toggle below, then enter your Music Assistant server's address.")
+        }
+      }
       Spacer(Modifier.size(26.dp))
       Card {
         Row(
@@ -517,6 +562,8 @@ private fun MultiRoomScreen(onBack: () -> Unit) {
                   ImmortalSettings.setSnapcastHost(context, it)
                 },
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                keyboardActions = KeyboardActions(onNext = { userFocus.requestFocus() }),
                 label = { Text("Music Assistant / Snapcast server IP") },
                 modifier = Modifier.weight(1f),
             )
@@ -546,9 +593,15 @@ private fun MultiRoomScreen(onBack: () -> Unit) {
               },
               singleLine = true,
               // No auto-capitalize: a lowercase MA username must stay lowercase.
-              keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
+              keyboardOptions =
+                  KeyboardOptions(
+                      capitalization = KeyboardCapitalization.None, imeAction = ImeAction.Next),
+              keyboardActions = KeyboardActions(onNext = { passFocus.requestFocus() }),
               label = { Text("Music Assistant username") },
-              modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 4.dp),
+              modifier =
+                  Modifier.fillMaxWidth()
+                      .padding(start = 18.dp, end = 18.dp, top = 4.dp)
+                      .focusRequester(userFocus),
           )
           OutlinedTextField(
               value = maPass,
@@ -558,9 +611,14 @@ private fun MultiRoomScreen(onBack: () -> Unit) {
               },
               singleLine = true,
               visualTransformation = PasswordVisualTransformation(),
-              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+              keyboardOptions =
+                  KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+              keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
               label = { Text("Music Assistant password") },
-              modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 8.dp),
+              modifier =
+                  Modifier.fillMaxWidth()
+                      .padding(start = 18.dp, end = 18.dp, top = 8.dp)
+                      .focusRequester(passFocus),
           )
           Row(
               modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 10.dp),
