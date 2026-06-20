@@ -172,6 +172,16 @@
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.SampleApp" />
 
+        <!-- One-field form for pasting a public iCalendar (.ics) feed link from Google
+             Calendar or Apple iCloud, reachable from the "Calendar" section in
+             screensaver settings. -->
+        <activity
+            android:name=".CalendarUrlEntryActivity"
+            android:exported="false"
+            android:label="Calendar link"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.SampleApp" />
+
         <!-- "Install an APK" file browser, opened from the App Store. -->
         <activity
             android:name=".ApkBrowserActivity"

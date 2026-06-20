@@ -60,6 +60,11 @@ object ScreensaverConfig {
       val albumRefreshMin: Int = DEFAULT_ALBUM_REFRESH_MIN,
       val shuffle: Boolean = false,
       val includeVideo: Boolean = true,
+      // Calendar widget: a public iCalendar (.ics) feed link (Google "secret iCal"
+      // address or an Apple iCloud public-calendar / webcal link) and how much of it
+      // to show on the frame. Empty link = the widget is off.
+      val calendarUrl: String? = null,
+      val calendarRange: String = CalendarFeed.RANGE_DAY,
       // Battery models (Portal Go) only: pause the screensaver while unplugged so
       // the device can actually sleep, instead of showing photos until empty.
       val batterySaver: Boolean = true,
@@ -87,6 +92,9 @@ object ScreensaverConfig {
     /** True when the user has pasted a public album share link for us to fetch. */
     val usesUrl: Boolean
       get() = source == SOURCE_URL && !albumUrl.isNullOrBlank()
+    /** True when a calendar feed link is set, so the widget should show. */
+    val usesCalendar: Boolean
+      get() = !calendarUrl.isNullOrBlank()
   }
 
   /** Keep the slideshow interval sane (5s … 10min). */
@@ -110,6 +118,8 @@ object ScreensaverConfig {
             clampAlbumRefresh(p.getInt("album_refresh_min", DEFAULT_ALBUM_REFRESH_MIN)),
         shuffle = p.getBoolean("shuffle", false),
         includeVideo = p.getBoolean("include_video", true),
+        calendarUrl = p.getString("calendar_url", null),
+        calendarRange = CalendarFeed.clampRange(p.getString("calendar_range", CalendarFeed.RANGE_DAY)),
         batterySaver = p.getBoolean("battery_saver", true),
         showNowPlaying = p.getBoolean("show_now_playing", true),
         presenceMode =
@@ -145,6 +155,18 @@ object ScreensaverConfig {
       prefs(c).edit().putInt("album_refresh_min", clampAlbumRefresh(min)).apply()
 
   fun setShuffle(c: Context, on: Boolean) = prefs(c).edit().putBoolean("shuffle", on).apply()
+
+  /** Save (or clear, when blank) the calendar feed link. */
+  fun setCalendarUrl(c: Context, url: String) {
+    val trimmed = url.trim()
+    if (trimmed.isEmpty()) prefs(c).edit().remove("calendar_url").apply()
+    else prefs(c).edit().putString("calendar_url", trimmed).apply()
+  }
+
+  fun clearCalendarUrl(c: Context) = prefs(c).edit().remove("calendar_url").apply()
+
+  fun setCalendarRange(c: Context, range: String) =
+      prefs(c).edit().putString("calendar_range", CalendarFeed.clampRange(range)).apply()
 
   fun setIncludeVideo(c: Context, on: Boolean) =
       prefs(c).edit().putBoolean("include_video", on).apply()

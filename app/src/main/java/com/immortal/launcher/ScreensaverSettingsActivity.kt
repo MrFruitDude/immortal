@@ -281,6 +281,56 @@ private fun ScreensaverSettingsScreen() {
           modifier = Modifier.padding(top = 10.dp, start = 4.dp, end = 4.dp),
       )
 
+      // Calendar — a clean upcoming-events panel, fed by a public iCalendar (.ics)
+      // link from Google Calendar or Apple iCloud (no account sign-in).
+      Spacer(Modifier.size(26.dp))
+      SectionLabel("Calendar")
+      Card {
+        SelectableRow(
+            title = "Calendar link",
+            subtitle = calendarSubtitle(settings.usesCalendar, settings.calendarUrl),
+            selected = settings.usesCalendar,
+            onClick = {
+              context.startActivity(Intent(context, CalendarUrlEntryActivity::class.java))
+            },
+        )
+        if (settings.usesCalendar) {
+          Divider()
+          Row(
+              modifier = Modifier.fillMaxWidth().padding(18.dp),
+              verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Text("Show", color = Color.White, fontSize = 17.sp, modifier = Modifier.weight(1f))
+            Segmented(
+                options =
+                    listOf(
+                        "1 day" to CalendarFeed.RANGE_DAY,
+                        "3 days" to CalendarFeed.RANGE_3DAY,
+                        "Week" to CalendarFeed.RANGE_WEEK,
+                        "Events" to CalendarFeed.RANGE_AGENDA,
+                    ),
+                selected = settings.calendarRange,
+                onSelect = {
+                  ScreensaverConfig.setCalendarRange(context, it)
+                  settings = settings.copy(calendarRange = it)
+                },
+            )
+          }
+          Divider()
+          TextButtonRow("Paste a different link…") {
+            context.startActivity(Intent(context, CalendarUrlEntryActivity::class.java))
+          }
+        }
+      }
+      Text(
+          "Shows your upcoming events top-right on the frame. \"Events\" lists the next " +
+              "few whenever they are; the others show a day, three days, or the week ahead. " +
+              "Use a Google \"secret iCal\" address or an Apple iCloud public-calendar link.",
+          color = Color(0xFF7C7C7C),
+          fontSize = 13.sp,
+          modifier = Modifier.padding(top = 10.dp, start = 4.dp, end = 4.dp),
+      )
+
       Spacer(Modifier.size(26.dp))
 
       val hasBattery = remember { DreamPolicy.hasBattery(context) }
@@ -423,6 +473,13 @@ private fun shortUrl(url: String): String {
   val trimmed = url.trim()
   return if (trimmed.length <= 56) trimmed else trimmed.take(53) + "…"
 }
+
+private fun calendarSubtitle(usesCalendar: Boolean, url: String?): String =
+    when {
+      !usesCalendar || url.isNullOrBlank() ->
+          "Paste a Google or Apple iCloud calendar (.ics) link."
+      else -> "${CalendarFeed.providerName(url)} — ${shortUrl(url)}"
+    }
 
 @Composable
 private fun SectionLabel(text: String) {
