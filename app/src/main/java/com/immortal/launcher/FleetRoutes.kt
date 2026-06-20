@@ -142,8 +142,15 @@ class FleetRoutes(private val context: Context) {
     // path (e.g. `fleetctl dev update`). The package is derived from the APK if not
     // given. NOTE: an in-place update is OS signature-checked, so a local build must
     // be signed with the same key as the installed one (see the dev-mode docs).
+    //
+    // Gated behind dev mode: installing an arbitrary device-side APK sidesteps the
+    // catalog/versionCode gate, so it's only allowed when the operator has explicitly
+    // opted in via /dev. Outside dev mode the token only installs known catalog apps.
     val localPath = body.optString("path").ifBlank { null }
-    if (localPath != null) return installFile(localPath, body.optString("packageName").ifBlank { null })
+    if (localPath != null) {
+      if (!DevMode.isEnabled(context)) return resp(403, err("dev_mode_required"))
+      return installFile(localPath, body.optString("packageName").ifBlank { null })
+    }
 
     val pkg = body.optString("packageName").ifBlank { null } ?: return resp(400, err("packageName_required"))
     val apkUrl = body.optString("apkUrl").ifBlank { null }
@@ -211,7 +218,8 @@ class FleetRoutes(private val context: Context) {
     return DevMode.statusJson(DevMode.isEnabled(context), code, name)
   }
 
-  private fun config(req: FleetHttpServer.Request): FleetHttpServer.Response {    val body = parseJson(req.bodyText()) ?: return resp(400, err("bad_json"))
+  private fun config(req: FleetHttpServer.Request): FleetHttpServer.Response {
+    val body = parseJson(req.bodyText()) ?: return resp(400, err("bad_json"))
     if (body.has("name")) FleetConfig.setName(context, body.getString("name"))
     body.optJSONObject("set")?.let { set ->
       for (k in set.keys()) FleetConfig.setValue(context, k, set.get(k).toString())

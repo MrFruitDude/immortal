@@ -177,8 +177,11 @@ your local build must be signed with the **same key** as the installed Immortal 
 release key in `keystore.properties` — see the top-level README's *Releasing*) or
 the install is rejected. Reinstalling the same `versionCode` is fine; a *lower*
 versionCode is a downgrade and needs an uninstall first. On the device side this is
-just a flag (`/dev`) and a local-path option on `/install`; dev mode pauses
-`UpdateManager` and nothing else.
+just a flag (`/dev`) and a local-path option on `/install`. The local-path install
+is **only honoured while dev mode is on** (otherwise `/install` returns
+`403 dev_mode_required` and the token can still only install known catalog apps) —
+`dev update` enables it for you. Dev mode itself pauses `UpdateManager` and nothing
+else.
 
 #### The `fleetctl` CLI
 

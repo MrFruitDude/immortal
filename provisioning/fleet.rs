@@ -145,42 +145,72 @@ impl<'a> Parser<'a> {
         }
         Ok(Json::Arr(out))
     }
+    /// Read exactly four hex digits of a `\u` escape and advance past them.
+    fn read_hex4(&mut self) -> Result<u32, String> {
+        if self.i + 4 > self.b.len() {
+            return Err("bad \\u".into());
+        }
+        let hex = std::str::from_utf8(&self.b[self.i..self.i + 4]).map_err(|_| "bad \\u")?;
+        let cp = u32::from_str_radix(hex, 16).map_err(|_| "bad \\u")?;
+        self.i += 4;
+        Ok(cp)
+    }
     fn string(&mut self) -> Result<String, String> {
         if self.b.get(self.i) != Some(&b'"') {
             return Err("expected string".into());
         }
         self.i += 1;
-        let mut s = String::new();
+        // Accumulate raw bytes and decode as UTF-8 once at the end. Pushing each input
+        // byte as `byte as char` would mis-decode any multi-byte sequence (a byte >= 0x80
+        // becomes a Latin-1 codepoint, not its UTF-8 character), so device names / file
+        // contents with non-ASCII would come out garbled.
+        let mut buf: Vec<u8> = Vec::new();
+        let mut tmp = [0u8; 4];
         while self.i < self.b.len() {
             let c = self.b[self.i];
             self.i += 1;
             match c {
-                b'"' => return Ok(s),
+                b'"' => return String::from_utf8(buf).map_err(|_| "invalid utf-8 in string".into()),
                 b'\\' => {
                     let e = *self.b.get(self.i).ok_or("bad escape")?;
                     self.i += 1;
                     match e {
-                        b'"' => s.push('"'),
-                        b'\\' => s.push('\\'),
-                        b'/' => s.push('/'),
-                        b'n' => s.push('\n'),
-                        b't' => s.push('\t'),
-                        b'r' => s.push('\r'),
-                        b'b' => s.push('\u{8}'),
-                        b'f' => s.push('\u{c}'),
+                        b'"' => buf.push(b'"'),
+                        b'\\' => buf.push(b'\\'),
+                        b'/' => buf.push(b'/'),
+                        b'n' => buf.push(b'\n'),
+                        b't' => buf.push(b'\t'),
+                        b'r' => buf.push(b'\r'),
+                        b'b' => buf.push(0x08),
+                        b'f' => buf.push(0x0c),
                         b'u' => {
-                            let hex = std::str::from_utf8(&self.b[self.i..self.i + 4])
-                                .map_err(|_| "bad \\u")?;
-                            let cp = u32::from_str_radix(hex, 16).map_err(|_| "bad \\u")?;
-                            self.i += 4;
-                            s.push(char::from_u32(cp).unwrap_or('\u{fffd}'));
+                            let cp = self.read_hex4()?;
+                            // Combine a UTF-16 surrogate pair (e.g. emoji) into one scalar;
+                            // a lone/half surrogate becomes U+FFFD.
+                            let ch = if (0xD800..=0xDBFF).contains(&cp) {
+                                if self.b.get(self.i) == Some(&b'\\') && self.b.get(self.i + 1) == Some(&b'u') {
+                                    self.i += 2;
+                                    let lo = self.read_hex4()?;
+                                    if (0xDC00..=0xDFFF).contains(&lo) {
+                                        let scalar = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+                                        char::from_u32(scalar).unwrap_or('\u{fffd}')
+                                    } else {
+                                        '\u{fffd}'
+                                    }
+                                } else {
+                                    '\u{fffd}'
+                                }
+                            } else {
+                                char::from_u32(cp).unwrap_or('\u{fffd}')
+                            };
+                            buf.extend_from_slice(ch.encode_utf8(&mut tmp).as_bytes());
                         }
-                        _ => s.push(e as char),
+                        _ => buf.push(e),
                     }
                 }
                 _ => {
-                    // Pass UTF-8 bytes through verbatim.
-                    s.push(c as char);
+                    // Raw UTF-8 byte; decoded together with the rest once the string closes.
+                    buf.push(c);
                 }
             }
         }
@@ -991,7 +1021,8 @@ fn cmd_dev_update(args: &Args) -> i32 {
     rc
 }
 
-fn cmd_raw(args: &Args) -> i32 {    let method = args.pos(0).cloned().unwrap_or_else(|| die("raw: METHOD required"));
+fn cmd_raw(args: &Args) -> i32 {
+    let method = args.pos(0).cloned().unwrap_or_else(|| die("raw: METHOD required"));
     let mut path = args.pos(1).cloned().unwrap_or_else(|| die("raw: path required"));
     if !path.starts_with('/') {
         path = format!("/{}", path);
@@ -1095,4 +1126,64 @@ fn main() {
         }
     };
     std::process::exit(rc);
+}
+
+// ===================== tests =====================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(s: &str) -> Json {
+        Json::parse(s.as_bytes()).expect("valid json")
+    }
+
+    #[test]
+    fn string_decodes_multibyte_utf8() {
+        // Raw (already-UTF-8) bytes must survive verbatim, not be mangled into
+        // Latin-1 — this is the bug the byte-buffer rewrite fixes.
+        let j = parse("{\"name\":\"Wohnzimmer-Süd 🛋️\"}");
+        assert_eq!(j.get("name").and_then(|v| v.as_str()), Some("Wohnzimmer-Süd 🛋️"));
+    }
+
+    #[test]
+    fn string_decodes_unicode_escapes() {
+        // BMP escape and a surrogate-pair escape (😀 = \uD83D\uDE00).
+        let j = parse("{\"a\":\"\\u00fc\",\"b\":\"\\uD83D\\uDE00\"}");
+        assert_eq!(j.get("a").and_then(|v| v.as_str()), Some("ü"));
+        assert_eq!(j.get("b").and_then(|v| v.as_str()), Some("😀"));
+    }
+
+    #[test]
+    fn string_handles_simple_escapes() {
+        let j = parse("{\"s\":\"a\\tb\\nc\\\"d\\\\e\\/f\"}");
+        assert_eq!(j.get("s").and_then(|v| v.as_str()), Some("a\tb\nc\"d\\e/f"));
+    }
+
+    #[test]
+    fn parses_scalars_and_nesting() {
+        let j = parse("{\"n\":42,\"f\":1.5,\"ok\":true,\"z\":null,\"arr\":[1,2,3]}");
+        assert_eq!(j.get("n").and_then(|v| v.as_i64()), Some(42));
+        if let Some(Json::Arr(a)) = j.get("arr") {
+            assert_eq!(a.len(), 3);
+        } else {
+            panic!("arr missing");
+        }
+    }
+
+    #[test]
+    fn pretty_round_trips_unicode() {
+        // pretty-print then re-parse must preserve a non-ASCII value exactly.
+        let j = parse("{\"name\":\"Café 北京\"}");
+        let mut out = String::new();
+        j.pretty(0, &mut out);
+        let again = parse(&out);
+        assert_eq!(again.get("name").and_then(|v| v.as_str()), Some("Café 北京"));
+    }
+
+    #[test]
+    fn hhmm_parsing() {
+        assert_eq!(hhmm_to_min("22:00"), 1320);
+        assert_eq!(hhmm_to_min("07:30"), 450);
+    }
 }
