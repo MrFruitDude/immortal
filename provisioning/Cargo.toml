@@ -1,0 +1,14 @@
+[package]
+name = "fleetctl"
+version = "0.1.0"
+edition = "2021"
+description = "Lightweight CLI for the Immortal Fleet Agent (manage Portals over WiFi)."
+
+# Single-file, std-only — no dependencies. `cargo build --release` produces
+# target/release/fleetctl; or compile directly with `rustc -O fleet.rs -o fleetctl`.
+[[bin]]
+name = "fleetctl"
+path = "fleet.rs"
+
+[profile.release]
+opt-level = 3
