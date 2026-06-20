@@ -237,6 +237,43 @@ Immortal's own config and the screensaver calendar, logcat, and diagnostics. It 
 the provisioning kit). The `raw` subcommand calls any endpoint the agent grows
 later, so the CLI keeps working as the API expands.
 
+#### Back up & restore a Portal (before a risky reinstall)
+
+A clean reinstall — e.g. switching a Portal onto a build signed with a **different
+key** (your own debug/release key instead of the one currently installed) — requires
+an uninstall first, which **wipes that Portal's app data**: Immortal's config, its
+saved credentials (Immich / SMB / WebDAV, multiroom user/pass, …), and the list of
+apps you'd installed. `fleet-backup.sh` snapshots all of that first, and
+`fleet-restore.sh` puts it back afterward.
+
+```bash
+./fleet-backup.sh                 # snapshot every registered Portal
+./fleet-backup.sh "Portal Mini"   # …or one (by name or serial)
+```
+
+Each run writes `backups/<serial>/<timestamp>/` with `info.json`, `apps.json`
+(the installed-app list), `registry.json` (host/port/token), and every readable
+`shared_prefs/*.xml` — the agent runs *as* Immortal, so it reads its own
+`/data/data/.../shared_prefs` over `/fs/read`, no root or adb needed. **The
+`backups/` tree holds tokens and cleartext credentials, so it is git-ignored —
+keep it private.**
+
+After reinstalling the new build and re-registering the agent
+(`./provision.sh --fleet` over USB, which mints a fresh token):
+
+```bash
+./fleet-restore.sh "Portal Mini"                 # reinstall apps + restore prefs, then reboot
+./fleet-restore.sh "Portal Mini" --config        # instead: re-apply only screensaver/calendar
+./fleet-restore.sh "Portal Mini" --apps --dry-run # preview what would run
+```
+
+By default restore reinstalls the third-party apps that were present and pushes the
+saved `shared_prefs` back **verbatim** (full fidelity, including stored credentials),
+skipping `fleet_agent.xml` so the freshly-provisioned token is kept, then reboots so
+the app reloads them from disk. `--config` is a lighter alternative that re-applies
+only the endpoint-covered screensaver + calendar subset (no stored credentials, no
+reboot). `--prefs`, `--apps`, and `--dry-run` can be combined as needed.
+
 Provisioning deliberately does **not** switch the Portal into raw adb-over-WiFi:
 `adb tcpip` restarts adbd, which would stop Shizuku, and it doesn't survive a
 reboot anyway. The agent is the persistent channel. If
