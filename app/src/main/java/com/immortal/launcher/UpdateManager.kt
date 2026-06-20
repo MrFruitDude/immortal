@@ -52,6 +52,12 @@ object UpdateManager {
 
   /** Returns an [UpdateInfo] on the main thread only if a newer build exists. */
   fun checkForUpdate(context: Context, onResult: (UpdateInfo?) -> Unit) {
+    // Dev mode pauses the official self-updater so a locally-pushed build sticks.
+    if (DevMode.isEnabled(context)) {
+      android.util.Log.i("ImmortalUpdate", "dev mode on; skipping official update check")
+      onResult(null)
+      return
+    }
     io.execute {
       val available =
           runCatching {
