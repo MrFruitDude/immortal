@@ -7,3 +7,11 @@ alexa/
 
 # Downloaded/staged client APKs (immortal.apk is fetched from the release on first run)
 apks/*.apk
+
+# Compiled fleet CLI (build locally with rustc/cargo; never commit the binary)
+fleetctl
+target/
+Cargo.lock
+
+# Device backups from fleet-backup.sh (tokens + cleartext credentials — never commit)
+backups/
