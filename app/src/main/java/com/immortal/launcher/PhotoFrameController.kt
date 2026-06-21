@@ -12,17 +12,25 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Matrix
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
+import android.text.TextUtils
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.VideoView
 import androidx.exifinterface.media.ExifInterface
 import java.net.HttpURLConnection
 import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.Executors
 import kotlin.math.abs
 import org.json.JSONObject
@@ -53,6 +61,7 @@ class PhotoFrameController(
     private val unsplashKey: String = "",
     private val unsplashQuery: String = "nature,landscape,scenic",
     private val weatherRefreshMs: Long = 30 * 60_000L,
+    private val calendarRefreshMs: Long = 30 * 60_000L,
 ) {
   private val io = Executors.newSingleThreadExecutor()
   private val ui = Handler(Looper.getMainLooper())
@@ -63,6 +72,19 @@ class PhotoFrameController(
   // The overlay (clock / date / weather / battery / now-playing) is built and driven by the
   // FaceRenderer from a Face descriptor; this controller owns only the photo/video layer.
   private val faceRenderer = FaceRenderer(context, weatherRefreshMs)
+
+  // Calendar widget (top-right): a clean upcoming-events panel fed by a public ICS
+  // feed (Google secret-iCal / Apple iCloud public-calendar). Hidden when no link.
+  private lateinit var calendarPanel: LinearLayout
+  private lateinit var calendarHeader: TextView
+  private lateinit var calendarRows: LinearLayout
+  private var calendarEvents: List<CalendarFeed.Event> = emptyList()
+  // Text/padding scale for the current calendar size (0/1/2 → small/medium/large),
+  // applied as the panel is (re)rendered so a size change takes effect live.
+  private var calScale: Float = 1f
+  // The minute we last re-windowed the calendar, so the 1s tick only rebuilds it
+  // when the clock minute changes (drops past events, refreshes Today/Tomorrow).
+  private var lastCalMinute: Long = -1L
 
   private var settings = ScreensaverConfig.Settings()
 
@@ -134,6 +156,8 @@ class PhotoFrameController(
       return
     }
     applyFit()
+    refreshCalendar.run()
+    calendarTick.run()
     // Build + drive the overlay from the user's selected face ([FaceCatalog]); faceOverride lets
     // the debug preview harness (and the overnight night clock) render a specific face instead.
     faceRenderer.start(faceOverride ?: FaceCatalog.active(context))
@@ -316,7 +340,154 @@ class PhotoFrameController(
     root.addView(videoView, FrameLayout.LayoutParams(MATCH, MATCH, Gravity.CENTER))
 
     root.addView(faceRenderer.view)
+    buildCalendar(root)
     return root
+  }
+
+  /** A clean upcoming-events panel top-right, over the photo. Its own translucent
+   *  rounded backing keeps it legible without a full-screen scrim. Hidden until a
+   *  calendar link is set and there's something to show. */
+  private fun buildCalendar(root: FrameLayout) {
+    calendarPanel = LinearLayout(context)
+    calendarPanel.orientation = LinearLayout.VERTICAL
+    calendarPanel.visibility = View.GONE
+    val bg = GradientDrawable()
+    bg.setColor(0x66000000)
+    bg.cornerRadius = dp(18).toFloat()
+    calendarPanel.background = bg
+    calendarPanel.setPadding(dp(22), dp(18), dp(22), dp(18))
+    val lp = FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.END)
+    lp.setMargins(0, dp(40), dp(40), 0)
+    root.addView(calendarPanel, lp)
+
+    calendarHeader = text(15f, 0xCCFFFFFF.toInt(), false)
+    calendarHeader.typeface = Typeface.DEFAULT_BOLD
+    calendarHeader.letterSpacing = 0.08f
+    calendarPanel.addView(calendarHeader)
+
+    calendarRows = LinearLayout(context)
+    calendarRows.orientation = LinearLayout.VERTICAL
+    val rowsLp = LinearLayout.LayoutParams(WRAP, WRAP)
+    rowsLp.topMargin = dp(10)
+    calendarPanel.addView(calendarRows, rowsLp)
+  }
+
+  /** Rebuild the calendar panel from the cached events for the chosen range. Cheap
+   *  (no network) — called when a fetch lands and once per minute from [tick]. */
+  private fun renderCalendar() {
+    if (!this::calendarPanel.isInitialized) return
+    if (!settings.usesCalendar) {
+      calendarPanel.visibility = View.GONE
+      return
+    }
+    val now = System.currentTimeMillis()
+    val shown = CalendarFeed.window(calendarEvents, settings.calendarRange, now)
+    // Size + position can change at runtime (settings screen or a fleet push), so
+    // (re)apply the chrome each render. Scale drives text/padding; side drives the edge.
+    calScale =
+        when (settings.calendarSize) {
+          0 -> 0.82f
+          2 -> 1.22f
+          else -> 1f
+        }
+    applyCalendarChrome()
+    calendarHeader.textSize = 15f * calScale
+    calendarHeader.text = rangeLabel(settings.calendarRange).uppercase(Locale.getDefault())
+    calendarRows.removeAllViews()
+    calendarPanel.visibility = View.VISIBLE
+
+    if (shown.isEmpty()) {
+      val empty = text(17f * calScale, 0xCCFFFFFF.toInt(), false)
+      empty.text = "Nothing scheduled"
+      calendarRows.addView(empty)
+      return
+    }
+
+    val agenda = settings.calendarRange == CalendarFeed.RANGE_AGENDA
+    var lastDayKey = ""
+    for (ev in shown) {
+      // Day header whenever the day changes (and always in agenda mode, which spans
+      // arbitrary dates). A single-day range needs no per-day header.
+      val key = dayKey(ev.startMillis)
+      if (key != lastDayKey && (agenda || settings.calendarRange != CalendarFeed.RANGE_DAY)) {
+        val header = text(13f * calScale, 0x99FFFFFF.toInt(), false)
+        header.typeface = Typeface.DEFAULT_BOLD
+        header.text = dayHeader(ev.startMillis).uppercase(Locale.getDefault())
+        val hlp = LinearLayout.LayoutParams(WRAP, WRAP)
+        hlp.topMargin = if (calendarRows.childCount == 0) 0 else dp(12)
+        calendarRows.addView(header, hlp)
+      }
+      lastDayKey = key
+      calendarRows.addView(buildEventRow(ev))
+    }
+  }
+
+  /** Position the panel against the chosen edge and scale its padding to the size. */
+  private fun applyCalendarChrome() {
+    val pad = (22 * calScale).toInt()
+    val padV = (18 * calScale).toInt()
+    calendarPanel.setPadding(dp(pad), dp(padV), dp(pad), dp(padV))
+    val gravity =
+        Gravity.TOP or
+            (if (settings.calendarSide == ScreensaverConfig.CAL_SIDE_LEFT) Gravity.START
+            else Gravity.END)
+    val lp = FrameLayout.LayoutParams(WRAP, WRAP, gravity)
+    val side = dp(40)
+    if (settings.calendarSide == ScreensaverConfig.CAL_SIDE_LEFT) lp.setMargins(side, dp(40), 0, 0)
+    else lp.setMargins(0, dp(40), side, 0)
+    calendarPanel.layoutParams = lp
+  }
+
+  private fun buildEventRow(ev: CalendarFeed.Event): View {
+    val row = LinearLayout(context)
+    row.orientation = LinearLayout.HORIZONTAL
+    row.gravity = Gravity.CENTER_VERTICAL
+    val rowLp = LinearLayout.LayoutParams(WRAP, WRAP)
+    rowLp.topMargin = dp(6)
+
+    val time = text(17f * calScale, Color.WHITE, false)
+    time.text = if (ev.allDay) "All day" else timeLabel(ev.startMillis)
+    time.width = dp((96 * calScale).toInt())
+
+    val title = text(17f * calScale, Color.WHITE, false)
+    title.typeface = Typeface.DEFAULT_BOLD
+    title.text = ev.title
+    title.maxLines = 1
+    title.ellipsize = TextUtils.TruncateAt.END
+    title.maxWidth = dp((360 * calScale).toInt())
+
+    row.addView(time)
+    row.addView(title)
+    row.layoutParams = rowLp
+    return row
+  }
+
+  private fun rangeLabel(range: String): String =
+      when (range) {
+        CalendarFeed.RANGE_3DAY -> "Next 3 days"
+        CalendarFeed.RANGE_WEEK -> "This week"
+        CalendarFeed.RANGE_AGENDA -> "Upcoming"
+        else -> "Today"
+      }
+
+  private fun timeLabel(millis: Long): String {
+    val pattern = if (ImmortalSettings.use24HourClock(context)) "H:mm" else "h:mm a"
+    return SimpleDateFormat(pattern, Locale.getDefault()).format(Date(millis))
+  }
+
+  /** A stable per-day key (yyyyDDD) so the renderer can tell when the day changes. */
+  private fun dayKey(millis: Long): String =
+      SimpleDateFormat("yyyyDDD", Locale.US).format(Date(millis))
+
+  /** "Today" / "Tomorrow" / "Sat, Jun 21" relative to now. */
+  private fun dayHeader(millis: Long): String {
+    val today = dayKey(System.currentTimeMillis())
+    val tomorrow = dayKey(System.currentTimeMillis() + 24L * 60 * 60 * 1000)
+    return when (dayKey(millis)) {
+      today -> "Today"
+      tomorrow -> "Tomorrow"
+      else -> SimpleDateFormat("EEE, MMM d", Locale.getDefault()).format(Date(millis))
+    }
   }
 
   private fun applyFit() {
@@ -326,9 +497,33 @@ class PhotoFrameController(
         else ImageView.ScaleType.CENTER_CROP
   }
 
+  private fun text(sizeSp: Float, color: Int, light: Boolean): TextView {
+    val t = TextView(context)
+    t.textSize = sizeSp
+    t.setTextColor(color)
+    if (light) t.typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
+    t.setShadowLayer(8f, 0f, 2f, 0x99000000.toInt())
+    return t
+  }
+
   private fun intervalMs(): Long = settings.intervalSec * 1000L
 
   // --- periodic loops ---------------------------------------------------------
+  private val calendarTick =
+      object : Runnable {
+        override fun run() {
+          // Re-window the calendar once per minute (cheap, no network): drops events
+          // as they pass and rolls the Today/Tomorrow labels over at midnight.
+          val now = Date()
+          val minute = now.time / 60_000L
+          if (minute != lastCalMinute) {
+            lastCalMinute = minute
+            renderCalendar()
+          }
+          ui.postDelayed(this, 1_000L)
+        }
+      }
+
   private val rotate =
       object : Runnable {
         override fun run() {
@@ -337,6 +532,34 @@ class PhotoFrameController(
         }
       }
 
+  private val refreshCalendar =
+      object : Runnable {
+        override fun run() {
+          // Pick up calendar changes pushed over the fleet API (or via in-app
+          // settings) without restarting the dream: reload just the calendar fields,
+          // leaving the live slideshow state untouched.
+          val fresh = ScreensaverConfig.load(context)
+          if (fresh.calendarUrl != settings.calendarUrl ||
+              fresh.calendarRange != settings.calendarRange) {
+            settings = settings.copy(calendarUrl = fresh.calendarUrl, calendarRange = fresh.calendarRange)
+            renderCalendar()
+          }
+          val url = settings.calendarUrl
+          if (settings.usesCalendar && !url.isNullOrBlank()) {
+            io.execute {
+              val events = CalendarFeed.fetch(url)
+              ui.post {
+                calendarEvents = events
+                renderCalendar()
+              }
+            }
+          } else {
+            calendarEvents = emptyList()
+            renderCalendar()
+          }
+          ui.postDelayed(this, calendarRefreshMs)
+        }
+      }
   // --- navigation (branches on the active source) -----------------------------
   fun next() {
     when {

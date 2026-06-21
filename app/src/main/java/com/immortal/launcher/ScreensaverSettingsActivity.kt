@@ -257,6 +257,93 @@ private fun ScreensaverSettingsScreen() {
           modifier = Modifier.padding(top = 10.dp, start = 4.dp, end = 4.dp),
       )
 
+      // Calendar — a clean upcoming-events panel, fed by a public iCalendar (.ics)
+      // link from Google Calendar or Apple iCloud (no account sign-in).
+      Spacer(Modifier.size(26.dp))
+      SectionLabel("Calendar")
+      Card {
+        NavRow(
+            title = "Calendar link",
+            value = calendarValue(settings),
+        ) {
+          context.startActivity(Intent(context, CalendarUrlEntryActivity::class.java))
+        }
+        if (settings.hasCalendarLink) {
+          Divider()
+          // Show/hide the widget without forgetting the link, so it's a quick toggle.
+          ToggleRow("Show calendar widget", settings.calendarEnabled) {
+            ScreensaverConfig.setCalendarEnabled(context, it)
+            settings = settings.copy(calendarEnabled = it)
+          }
+        }
+        if (settings.usesCalendar) {
+          Divider()
+          Row(
+              modifier = Modifier.fillMaxWidth().padding(18.dp),
+              verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Text("Show", color = Color.White, fontSize = 17.sp, modifier = Modifier.weight(1f))
+            Segmented(
+                options =
+                    listOf(
+                        "1 day" to CalendarFeed.RANGE_DAY,
+                        "3 days" to CalendarFeed.RANGE_3DAY,
+                        "Week" to CalendarFeed.RANGE_WEEK,
+                        "Events" to CalendarFeed.RANGE_AGENDA,
+                    ),
+                selected = settings.calendarRange,
+                onSelect = {
+                  ScreensaverConfig.setCalendarRange(context, it)
+                  settings = settings.copy(calendarRange = it)
+                },
+            )
+          }
+          Divider()
+          Row(
+              modifier = Modifier.fillMaxWidth().padding(18.dp),
+              verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Text("Size", color = Color.White, fontSize = 17.sp, modifier = Modifier.weight(1f))
+            Segmented(
+                options = listOf("Small" to "0", "Medium" to "1", "Large" to "2"),
+                selected = settings.calendarSize.toString(),
+                onSelect = {
+                  val i = it.toIntOrNull() ?: 1
+                  ScreensaverConfig.setCalendarSize(context, i)
+                  settings = settings.copy(calendarSize = i)
+                },
+            )
+          }
+          Divider()
+          Row(
+              modifier = Modifier.fillMaxWidth().padding(18.dp),
+              verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Text("Position", color = Color.White, fontSize = 17.sp, modifier = Modifier.weight(1f))
+            Segmented(
+                options =
+                    listOf(
+                        "Left" to ScreensaverConfig.CAL_SIDE_LEFT,
+                        "Right" to ScreensaverConfig.CAL_SIDE_RIGHT,
+                    ),
+                selected = settings.calendarSide,
+                onSelect = {
+                  ScreensaverConfig.setCalendarSide(context, it)
+                  settings = settings.copy(calendarSide = it)
+                },
+            )
+          }
+        }
+      }
+      Text(
+          "Shows your upcoming events on the frame. \"Events\" lists the next " +
+              "few whenever they are; the others show a day, three days, or the week ahead. " +
+              "Use a Google \"secret iCal\" address or an Apple iCloud public-calendar link.",
+          color = Color(0xFF7C7C7C),
+          fontSize = 13.sp,
+          modifier = Modifier.padding(top = 10.dp, start = 4.dp, end = 4.dp),
+      )
+
       Spacer(Modifier.size(26.dp))
 
       val hasBattery = remember { DreamPolicy.hasBattery(context) }
@@ -400,6 +487,22 @@ private fun currentSourceLabel(s: ScreensaverConfig.Settings): String =
       s.usesDav -> "WebDAV folder"
       s.usesWebUrl -> "Web page"
       else -> "Immortal photos"
+    }
+
+private fun calendarValue(s: ScreensaverConfig.Settings): String =
+    when {
+      s.calendarUrl.isNullOrBlank() -> "Off"
+      !s.calendarEnabled -> "${CalendarFeed.providerName(s.calendarUrl)} - hidden"
+      else -> "${CalendarFeed.providerName(s.calendarUrl)} - ${calendarRangeLabel(s.calendarRange)}"
+    }
+
+private fun calendarRangeLabel(range: String): String =
+    when (CalendarFeed.clampRange(range)) {
+      CalendarFeed.RANGE_DAY -> "1 day"
+      CalendarFeed.RANGE_3DAY -> "3 days"
+      CalendarFeed.RANGE_WEEK -> "Week"
+      CalendarFeed.RANGE_AGENDA -> "Events"
+      else -> "1 day"
     }
 
 @Composable

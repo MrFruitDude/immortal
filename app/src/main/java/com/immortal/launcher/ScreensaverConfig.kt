@@ -51,6 +51,10 @@ object ScreensaverConfig {
   const val DEFAULT_INTERVAL = 30
   const val DEFAULT_ALBUM_REFRESH_MIN = 60
 
+  // Which edge the calendar widget hugs. Top of that edge either way.
+  const val CAL_SIDE_LEFT = "left"
+  const val CAL_SIDE_RIGHT = "right"
+
   data class Settings(
       // Master on/off for Immortal's photo-frame screensaver. When off, Immortal
       // stops asserting itself as the system Dream and lets the Portal sleep / lets
@@ -83,6 +87,18 @@ object ScreensaverConfig {
       val albumRefreshMin: Int = DEFAULT_ALBUM_REFRESH_MIN,
       val shuffle: Boolean = false,
       val includeVideo: Boolean = true,
+      // Calendar widget: a public iCalendar (.ics) feed link (Google "secret iCal"
+      // address or an Apple iCloud public-calendar / webcal link) and how much of it
+      // to show on the frame. Empty link = the widget is off.
+      val calendarUrl: String? = null,
+      val calendarRange: String = CalendarFeed.RANGE_DAY,
+      // Show/hide the calendar widget without forgetting the link, so the user can
+      // toggle it off and back on. Defaults on, so a freshly-added link shows.
+      val calendarEnabled: Boolean = true,
+      // Calendar widget size (0 = Small, 1 = Medium, 2 = Large) and which screen edge
+      // it hugs (left/right). Defaults: medium, right — the original placement.
+      val calendarSize: Int = 1,
+      val calendarSide: String = CAL_SIDE_RIGHT,
       // Battery models (Portal Go) only: pause the screensaver while unplugged so
       // the device can actually sleep, instead of showing photos until empty.
       val batterySaver: Boolean = true,
@@ -132,6 +148,12 @@ object ScreensaverConfig {
     /** True when the user has pasted a public album share link for us to fetch. */
     val usesUrl: Boolean
       get() = source == SOURCE_URL && !albumUrl.isNullOrBlank()
+    /** True when a calendar link is set, regardless of the on/off toggle. */
+    val hasCalendarLink: Boolean
+      get() = !calendarUrl.isNullOrBlank()
+    /** True when the widget should show: a link is set AND the toggle is on. */
+    val usesCalendar: Boolean
+      get() = calendarEnabled && hasCalendarLink
     /** True when the user has connected an Immich server for us to pull from. */
     val usesImmich: Boolean
       get() = source == SOURCE_IMMICH && !immichUrl.isNullOrBlank() && !immichKey.isNullOrBlank()
@@ -180,6 +202,13 @@ object ScreensaverConfig {
             clampAlbumRefresh(p.getInt("album_refresh_min", DEFAULT_ALBUM_REFRESH_MIN)),
         shuffle = p.getBoolean("shuffle", false),
         includeVideo = p.getBoolean("include_video", true),
+        calendarUrl = p.getString("calendar_url", null),
+        calendarRange = CalendarFeed.clampRange(p.getString("calendar_range", CalendarFeed.RANGE_DAY)),
+        calendarEnabled = p.getBoolean("calendar_enabled", true),
+        calendarSize = p.getInt("calendar_size", 1).coerceIn(0, 2),
+        calendarSide =
+            if (p.getString("calendar_side", CAL_SIDE_RIGHT) == CAL_SIDE_LEFT) CAL_SIDE_LEFT
+            else CAL_SIDE_RIGHT,
         batterySaver = p.getBoolean("battery_saver", true),
         showNowPlaying = p.getBoolean("show_now_playing", true),
         facesEnabled = p.getBoolean("faces_enabled", true),
@@ -271,6 +300,33 @@ object ScreensaverConfig {
       prefs(c).edit().putInt("album_refresh_min", clampAlbumRefresh(min)).apply()
 
   fun setShuffle(c: Context, on: Boolean) = prefs(c).edit().putBoolean("shuffle", on).apply()
+
+  /** Save (or clear, when blank) the calendar feed link. */
+  fun setCalendarUrl(c: Context, url: String) {
+    val trimmed = url.trim()
+    if (trimmed.isEmpty()) prefs(c).edit().remove("calendar_url").apply()
+    else prefs(c).edit().putString("calendar_url", trimmed).apply()
+  }
+
+  fun clearCalendarUrl(c: Context) = prefs(c).edit().remove("calendar_url").apply()
+
+  /** Show/hide the calendar widget without clearing the saved link. */
+  fun setCalendarEnabled(c: Context, on: Boolean) =
+      prefs(c).edit().putBoolean("calendar_enabled", on).apply()
+
+  /** Calendar widget size: 0 = Small, 1 = Medium, 2 = Large. */
+  fun setCalendarSize(c: Context, i: Int) =
+      prefs(c).edit().putInt("calendar_size", i.coerceIn(0, 2)).apply()
+
+  /** Which edge the calendar widget hugs ([CAL_SIDE_LEFT] / [CAL_SIDE_RIGHT]). */
+  fun setCalendarSide(c: Context, side: String) =
+      prefs(c)
+          .edit()
+          .putString("calendar_side", if (side == CAL_SIDE_LEFT) CAL_SIDE_LEFT else CAL_SIDE_RIGHT)
+          .apply()
+
+  fun setCalendarRange(c: Context, range: String) =
+      prefs(c).edit().putString("calendar_range", CalendarFeed.clampRange(range)).apply()
 
   fun setIncludeVideo(c: Context, on: Boolean) =
       prefs(c).edit().putBoolean("include_video", on).apply()
