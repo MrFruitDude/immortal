@@ -71,10 +71,14 @@ object FleetCalendar {
       ScreensaverConfig.setCalendarUrl(context, body.optString("url"))
       applied.add("url")
     }
-    if (body.has("enabled")) {
-      // The on/off toggle — hides/shows the widget without forgetting the link.
-      ScreensaverConfig.setCalendarEnabled(context, body.optBoolean("enabled"))
-      applied.add("enabled")
+    // The on/off toggle. Preferred write key is "widgetOn", which round-trips
+    // symmetrically with the GET payload's "widgetOn"; "enabled" is accepted as an
+    // alias for it (note: GET "enabled" is the *effective* value — link set AND toggle
+    // on — so writing "enabled" sets only the toggle, by design).
+    if (body.has("widgetOn") || body.has("enabled")) {
+      val on = if (body.has("widgetOn")) body.optBoolean("widgetOn") else body.optBoolean("enabled")
+      ScreensaverConfig.setCalendarEnabled(context, on)
+      applied.add("widgetOn")
     }
     if (body.has("range")) {
       // setCalendarRange clamps unknown values back to a single day.

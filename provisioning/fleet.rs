@@ -808,9 +808,9 @@ fn cmd_calendar(args: &Args) -> i32 {
         fields.push(("url", Field::S(String::new())));
     } else if action == "disable" {
         // Hide the widget but keep the saved link (the on/off toggle).
-        fields.push(("enabled", Field::B(false)));
+        fields.push(("widgetOn", Field::B(false)));
     } else if action == "enable" {
-        fields.push(("enabled", Field::B(true)));
+        fields.push(("widgetOn", Field::B(true)));
     } else {
         if let Some(u) = args.flag("url") {
             fields.push(("url", Field::S(u)));

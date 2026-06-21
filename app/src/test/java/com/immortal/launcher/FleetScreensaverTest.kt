@@ -66,30 +66,12 @@ class FleetScreensaverTest {
   }
 
   @Test
-  fun coercePresenceMode_parsesOrDefaults() {
+  fun coercePresenceMode_parsesOrNull() {
     assertEquals(FrameMode.PRESENCE, FleetScreensaver.coercePresenceMode("PRESENCE"))
     assertEquals(FrameMode.PRESENCE, FleetScreensaver.coercePresenceMode("presence"))
     assertEquals(FrameMode.ALWAYS_ON, FleetScreensaver.coercePresenceMode("ALWAYS_ON"))
-    assertEquals(FrameMode.ALWAYS_ON, FleetScreensaver.coercePresenceMode("garbage"))
-    assertEquals(FrameMode.ALWAYS_ON, FleetScreensaver.coercePresenceMode(null))
-  }
-
-  @Test
-  fun recognizedKeys_coverTheSettableFields() {
-    val keys = FleetScreensaver.RECOGNIZED_KEYS
-    listOf(
-            "enabled",
-            "source",
-            "fit",
-            "intervalSec",
-            "shuffle",
-            "includeVideo",
-            "showNowPlaying",
-            "presenceMode",
-            "idleSleepMin",
-            "overnightEnabled",
-            "overnightStartMin",
-            "overnightEndMin")
-        .forEach { assertTrue("missing $it", keys.contains(it)) }
+    // Unknown / null → null, so apply() skips it instead of flipping the mode.
+    assertNull(FleetScreensaver.coercePresenceMode("garbage"))
+    assertNull(FleetScreensaver.coercePresenceMode(null))
   }
 }

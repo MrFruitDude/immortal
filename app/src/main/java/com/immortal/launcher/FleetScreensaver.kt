@@ -58,30 +58,13 @@ object FleetScreensaver {
         else -> null
       }
 
-  /** Parse a presence-mode name; defaults to ALWAYS_ON on anything unexpected. Pure. */
-  internal fun coercePresenceMode(v: String?): FrameMode =
-      runCatching { FrameMode.valueOf((v ?: "").uppercase()) }.getOrDefault(FrameMode.ALWAYS_ON)
-
-  /** Source keys understood by [apply] beyond the value-driven folder/url paths. */
-  internal val RECOGNIZED_KEYS =
-      setOf(
-          "enabled",
-          "source",
-          "folderPath",
-          "albumUrl",
-          "albumRefreshMin",
-          "fit",
-          "intervalSec",
-          "shuffle",
-          "includeVideo",
-          "batterySaver",
-          "showNowPlaying",
-          "presenceMode",
-          "idleSleepMin",
-          "overnightEnabled",
-          "overnightStartMin",
-          "overnightEndMin",
-      )
+  /**
+   * Parse a presence-mode name, or null if unrecognised. Pure. Returning null (rather
+   * than defaulting) lets [apply] skip an unknown value instead of silently flipping
+   * the mode on a typo — the same fail-safe shape as [coerceFit].
+   */
+  internal fun coercePresenceMode(v: String?): FrameMode? =
+      runCatching { FrameMode.valueOf((v ?: "").uppercase()) }.getOrNull()
 
   /**
    * Apply a pushed screensaver config. Returns the list of applied keys, plus a flag
@@ -145,8 +128,12 @@ object FleetScreensaver {
       applied.add("showNowPlaying")
     }
     if (body.has("presenceMode")) {
-      ScreensaverConfig.setPresenceMode(context, coercePresenceMode(body.optString("presenceMode")))
-      applied.add("presenceMode")
+      // Ignore an unrecognised mode rather than defaulting (which would silently flip
+      // the setting on a typo); a valid value is applied.
+      coercePresenceMode(body.optString("presenceMode"))?.let {
+        ScreensaverConfig.setPresenceMode(context, it)
+        applied.add("presenceMode")
+      }
     }
     if (body.has("idleSleepMin")) {
       ScreensaverConfig.setIdleSleepMin(context, body.optInt("idleSleepMin"))
