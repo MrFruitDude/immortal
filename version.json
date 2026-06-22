@@ -1,6 +1,6 @@
 {
-  "versionCode": 45,
-  "versionName": "1.44",
+  "versionCode": 46,
+  "versionName": "1.45",
   "apkUrl": "https://github.com/starbrightlab/immortal/releases/latest/download/immortal.apk",
-  "notes": "Immortal 1.44: Turn any phone into a remote for your Portal. Open a web page on the same Wi-Fi \u2014 scan the QR from the new remote button on the home screen \u2014 for navigation, a touchpad, keyboard input, an app launcher, and one-tap presets, with nothing to install and support for several Portals at once. Also: the photo frame is never blank again, thanks to a keyless fallback chain that ends with photos bundled in the app (so it works even with no network), and web-page screensavers no longer swallow taps."
+  "notes": "Immortal 1.45: The phone remote gains media controls \u2014 a Now Playing tab with album art, title and artist, a scrubber, and play/pause/skip for whatever's playing on the Portal. It works with any media app, and from one phone you can control playback on every Portal on your Wi-Fi."
 }
