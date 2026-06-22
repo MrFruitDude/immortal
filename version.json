@@ -1,6 +1,6 @@
 {
-  "versionCode": 47,
-  "versionName": "1.46",
+  "versionCode": 48,
+  "versionName": "1.47",
   "apkUrl": "https://github.com/starbrightlab/immortal/releases/latest/download/immortal.apk",
-  "notes": "Immortal 1.46 \u2014 screensaver polish. Photos now drift with a slow, tvOS-style Ken Burns zoom and pan, and your own photos (local folder or NAS) show a subtle \"place \u00b7 date\" caption read from their EXIF, with the place reverse-geocoded \u2014 no API key needed. Public iCloud and Google Photos shared albums that used to fall back to the built-in feed when their links expired now refresh and keep playing. The anti-burn-in pixel-shift is much gentler and can be switched off under Screensaver \u203a Display. Plus a reliability fix so the caption's location reliably resolves."
+  "notes": "Fixes the phone remote going partly unresponsive after an app update: Power, Back, Home, the touchpad, and page up/down now reliably reconnect when you open the remote (this also restores the Calls-to-home bridge and quick buttons, which share the same service). Also adds volume controls (with mute) to the remote's Media tab, a Screensaver button to the remote, and album art now shows in the home mini-player for tracks that provide it as a URI."
 }
