@@ -32,8 +32,8 @@ android {
     applicationId = "com.immortal.launcher"
     minSdk = 24
     targetSdk = 36
-    versionCode = 46
-    versionName = "1.45"
+    versionCode = 48
+    versionName = "1.47"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -70,6 +70,18 @@ android {
     debug {
       // Lets a debug build install alongside a provisioned release for testing.
       applicationIdSuffix = ".debug"
+    }
+    // Release-faithful iteration build. Same applicationId + same signing key + minify off
+    // (inherited from release via initWith), so it provisions identically — home role, device
+    // admin, and self-update signature checks all behave exactly as on a release build. The ONLY
+    // difference is `debuggable = true`, which lets `adb install -r -d` freely replace or downgrade
+    // it. That sidesteps the two walls a pure release build hits on a dev device: version-code
+    // downgrades (a feature branch is always a lower code) and the device admin blocking uninstall.
+    // Use for on-device iteration; validate the true `release` artifact before shipping.
+    create("dev") {
+      initWith(getByName("release"))
+      isDebuggable = true
+      matchingFallbacks += "release"
     }
   }
   compileOptions {

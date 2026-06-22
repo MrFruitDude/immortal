@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "updated": "2026-06-17",
+  "updated": "2026-06-22",
   "note": "Portal app catalog, schema v2. All v2 fields are ADDITIVE so v1 clients keep working. Entries with source 'fdroid' resolve the current APK at install time via the F-Droid API, so they never go stale. Entries with source 'url' use a direct apkUrl (use this for your own custom Portal apps). Multi-ABI apps (e.g. VLC) ship separate per-architecture APKs on F-Droid; pin the arm64-v8a build with 'versionCode' since Portal is arm64. New in v2: iconUrl (https PNG; omit to get a monogram tile), author, homepage, submittedBy (community credit), longDescription (detail page), devices (['touch','tv'] — omit when the app runs on every Portal). minSdk drives the compatibility badge: the first-gen Portal/Portal+ and Portal TV are API 28, the 2019/2021 models are API 29.",
   "categories": [
     {
@@ -20,16 +20,29 @@
           "homepage": "https://www.videolan.org/vlc/"
         },
         {
-          "name": "Jellyfin",
+          "name": "Jellyfin (stock)",
           "packageName": "org.jellyfin.mobile",
           "source": "fdroid",
           "fdroidId": "org.jellyfin.mobile",
           "minSdk": 21,
-          "description": "Client for your own Jellyfin media server — movies, shows, music.",
-          "longDescription": "Connects your Portal to a Jellyfin media server on your network: movies, TV shows, and music with artwork and resume support. A great way to turn the Portal into a kitchen or bedside theater.",
+          "description": "Official Jellyfin client. On a Portal, install portalfin (below) instead.",
+          "longDescription": "The official Jellyfin Android app. It installs and runs on the Portal, but it's a phone app: it loads the standard Jellyfin web interface in a browser window, the menus fight the device's fixed back and home buttons, the styling matches nothing else on the Portal, and it shows controls for hardware the Portal doesn't have (casting and the like). For a client actually built for the Portal — native screens, a native player, and Portal navigation — install portalfin instead (listed just below). This entry stays for anyone who specifically wants the stock app.",
           "iconUrl": "https://f-droid.org/repo/org.jellyfin.mobile/en-US/icon.png",
           "author": "Jellyfin Project",
           "homepage": "https://jellyfin.org"
+        },
+        {
+          "name": "portalfin (Jellyfin for Portal)",
+          "packageName": "org.jellyfin.mobile.portalfin",
+          "source": "url",
+          "apkUrl": "https://github.com/luke-hurd/portalfin/releases/latest/download/portalfin.apk",
+          "minSdk": 21,
+          "description": "Jellyfin rebuilt for the Portal — native screens, native player, Portal navigation.",
+          "longDescription": "A Jellyfin client built specifically for the Portal, not a phone app stretched to fit. The browsing experience is native Jetpack Compose talking to your Jellyfin server's REST API directly — no browser window — with a native player that's faster and more reliable on the Portal's modest hardware. Built to the Portal's design language (Material 3, the Inter typeface, Meta blue) and its navigation, so the OSD back button and the home overlay — including the protected area at the top — work properly instead of fighting a web UI's own back behavior. Phone-only features the Portal can't use (casting, battery and power settings) are removed rather than left sitting there broken. Recommended over the stock Jellyfin app for Portal users.",
+          "iconUrl": "https://raw.githubusercontent.com/luke-hurd/portalfin/main/app/src/main/res/drawable-nodpi/ic_launcher_full.png",
+          "author": "luke-hurd",
+          "homepage": "https://github.com/luke-hurd/portalfin",
+          "submittedBy": "luke-hurd"
         },
         {
           "name": "SmartTube",

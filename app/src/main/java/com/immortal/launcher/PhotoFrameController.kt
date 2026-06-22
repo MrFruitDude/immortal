@@ -7,6 +7,8 @@
 
 package com.immortal.launcher
 
+import android.animation.AnimatorSet
+import android.animation.ObjectAnimator
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -21,6 +23,7 @@ import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -67,10 +70,24 @@ class PhotoFrameController(
     private val calendarRefreshMs: Long = 30 * 60_000L,
 ) {
   private val io = Executors.newSingleThreadExecutor()
+  // A separate single-thread executor for caption work (EXIF read + the reverse-geocode
+  // network call), so an 8s geocode lookup can never stall the image-decode pipeline on [io].
+  private val metaIo = Executors.newSingleThreadExecutor()
   private val ui = Handler(Looper.getMainLooper())
 
   private lateinit var photo: ImageView
   private lateinit var videoView: VideoView
+
+  // tvOS-style slow zoom/pan ("Ken Burns") on the photo layer. Runs over the dwell time and is
+  // cancelled/restarted on each advance; only in fill mode (fit/letterbox is "show the whole
+  // image", which zooming would crop into). [kenBurnsStyle] cycles the motion so consecutive
+  // photos don't all move the same way.
+  private var kenBurns: AnimatorSet? = null
+  private var kenBurnsStyle = 0
+
+  // The "place · date" caption is now a FaceRenderer grid element (so it stacks with the
+  // now-playing card instead of overlapping it). This controller still reads the EXIF here
+  // (own photos only — local folder / SMB) and pushes it via [FaceRenderer.setCaption].
 
   // The overlay (clock / date / weather / battery / now-playing) is built and driven by the
   // FaceRenderer from a Face descriptor; this controller owns only the photo/video layer.
@@ -104,6 +121,13 @@ class PhotoFrameController(
   private var remoteUrls: List<String> = emptyList()
   private var remoteIndex = -1
   private var remoteFailStreak = 0
+  // Shared-album signed image URLs (iCloud/Google) expire over time. When a whole loop of
+  // downloads fails we re-mint fresh URLs and keep playing instead of dropping to the built-in
+  // feed; [remoteReresolveStreak] caps consecutive re-resolves so a genuine outage still settles
+  // on the fallback rather than re-fetching forever. [remoteReresolving] guards against
+  // overlapping re-fetches.
+  private var remoteReresolveStreak = 0
+  private var remoteReresolving = false
   // Auth headers sent with each remote image download — empty for public shares, the
   // x-api-key for Immich. Applied in [advanceRemote]/[downloadBitmap].
   private var remoteHeaders: Map<String, String> = emptyMap()
@@ -335,6 +359,7 @@ class PhotoFrameController(
 
   fun stop() {
     ui.removeCallbacksAndMessages(null)
+    cancelKenBurns()
     faceRenderer.stop()
     if (this::videoView.isInitialized) runCatching { videoView.stopPlayback() }
     webView?.let { runCatching { it.stopLoading(); it.destroy() } }
@@ -343,6 +368,7 @@ class PhotoFrameController(
     smbSource?.let { s -> Thread { runCatching { s.close() } }.start() }
     smbSource = null
     io.shutdownNow()
+    metaIo.shutdownNow()
   }
 
   // --- UI ---------------------------------------------------------------------
@@ -363,6 +389,37 @@ class PhotoFrameController(
     root.addView(faceRenderer.view)
     buildCalendar(root)
     return root
+  }
+
+  /** Read EXIF date/GPS for a local file off [metaIo], reverse-geocode the place, then publish
+   *  the caption — guarded by [gen] so a slow lookup for a superseded photo is dropped. */
+  private fun loadCaptionForLocal(path: String, g: Int) {
+    metaIo.execute {
+      val meta = runCatching { PhotoCaption.read(ExifInterface(path)) }.getOrNull()
+      publishCaption(meta, g)
+    }
+  }
+
+  /** Same as [loadCaptionForLocal] but for an SMB file: a fresh read stream feeds EXIF. */
+  private fun loadCaptionForSmb(path: String, g: Int) {
+    val src = smbSource ?: return
+    metaIo.execute {
+      val meta =
+          runCatching { src.openStream(path)?.use { PhotoCaption.read(ExifInterface(it)) } }
+              .getOrNull()
+      publishCaption(meta, g)
+    }
+  }
+
+  private fun publishCaption(meta: PhotoCaption.Meta?, g: Int) {
+    if (meta == null || meta.isEmpty) {
+      ui.post { if (g == gen) faceRenderer.setCaption(null, null) }
+      return
+    }
+    // Resolve the place name on this background thread (network) before touching the UI.
+    val place = if (meta.hasLocation) PhotoCaption.placeName(meta.lat!!, meta.lng!!) else null
+    val date = PhotoCaption.formatDate(meta.dateMillis)
+    ui.post { if (g == gen) faceRenderer.setCaption(place, date) }
   }
 
   /** A clean upcoming-events panel top-right, over the photo. Its own translucent
@@ -630,6 +687,7 @@ class PhotoFrameController(
         }
         photo.visibility = View.VISIBLE
         show(bmp)
+        loadCaptionForLocal(path, g)
         ui.postDelayed(localTick, intervalMs())
       }
     }
@@ -680,6 +738,8 @@ class PhotoFrameController(
   }
 
   private fun showVideo(path: String, g: Int) {
+    cancelKenBurns()
+    faceRenderer.setCaption(null, null)
     photo.setImageDrawable(null)
     photo.visibility = View.GONE
     videoView.visibility = View.VISIBLE
@@ -753,10 +813,11 @@ class PhotoFrameController(
       startWeb()
       return
     }
-    // One failure per URL = the whole album is unreachable; bail to the web feed
-    // so a dead share doesn't spin 8-12s timeouts indefinitely.
+    // One failure per URL = the whole album is unreachable. For a public-album share this
+    // usually means its signed image URLs have simply expired, so try to re-mint fresh ones
+    // before giving up to the built-in feed (see [reresolveOrFallback]).
     if (remoteFailStreak >= remoteUrls.size) {
-      startWeb()
+      reresolveOrFallback()
       return
     }
     gen++
@@ -777,9 +838,53 @@ class PhotoFrameController(
           return@post
         }
         remoteFailStreak = 0
+        remoteReresolveStreak = 0
         photo.visibility = View.VISIBLE
         show(bmp)
+        // EXIF caption only for SMB here — it reads the user's own files. The HTTP remote sources
+        // (iCloud/Google/Immich/DAV) serve EXIF-stripped images, so they carry no caption.
+        if (smbSource != null) loadCaptionForSmb(url, g) else faceRenderer.setCaption(null, null)
         ui.postDelayed(remoteTick, intervalMs())
+      }
+    }
+  }
+
+  /**
+   * A full loop of failed downloads on a public-album share almost always means its signed image
+   * URLs have expired (iCloud/Google hand out short-lived links), not that the album is gone. So
+   * re-fetch fresh URLs and keep playing rather than reverting to the built-in feed — the bug
+   * where a "refresh" silently dropped a working shared album back to the stock screensaver.
+   *
+   * Only the public-album URL source mints expiring links; the others (Immich/DAV/SMB) use stable
+   * endpoints, so a full failure loop there is a genuine outage and falls back as before.
+   * [remoteReresolveStreak] caps consecutive re-resolves (reset on any successful photo) so a real,
+   * sustained outage still settles on the fallback instead of re-fetching forever.
+   */
+  private fun reresolveOrFallback() {
+    if (remoteReresolving) return
+    val shareUrl = settings.albumUrl
+    if (!settings.usesUrl || shareUrl.isNullOrBlank() || remoteReresolveStreak >= MAX_RERESOLVE) {
+      startWeb()
+      return
+    }
+    remoteReresolving = true
+    remoteReresolveStreak++
+    val m = context.resources.displayMetrics
+    io.execute {
+      val fresh = RemoteAlbum.fetch(shareUrl, m.widthPixels, m.heightPixels)
+      val urls = fresh?.photoUrls.orEmpty()
+      ui.post {
+        remoteReresolving = false
+        if (!remoteMode) return@post // raced with a source change / startWeb()
+        if (urls.isNotEmpty()) {
+          remoteUrls = if (settings.shuffle) urls.shuffled() else urls
+          remoteIndex = -1
+          remoteFailStreak = 0
+          advanceRemote(+1)
+        } else {
+          // Album genuinely unreachable / unshared → don't leave the frame spinning.
+          startWeb()
+        }
       }
     }
   }
@@ -868,15 +973,76 @@ class PhotoFrameController(
   }
 
   private fun show(bmp: Bitmap) {
+    // The caption belongs to whichever photo is incoming; hide it now and let the per-source
+    // metadata load re-show it (web/CDN photos never re-show it — they carry no EXIF).
+    faceRenderer.setCaption(null, null)
     photo
         .animate()
         .alpha(0.15f)
         .setDuration(220)
         .withEndAction {
           photo.setImageBitmap(bmp)
+          startKenBurns()
           photo.animate().alpha(1f).setDuration(420).start()
         }
         .start()
+  }
+
+  /**
+   * Apply a slow tvOS-style zoom/pan to the current photo over the dwell time. Cancelled and
+   * restarted on each advance. Only in fill mode: in fit/letterbox mode the user asked to see the
+   * whole frame, so cropping into it with a zoom would defeat that. A little overscan (scale
+   * [BIG]) gives pan styles room to move without ever exposing the black background.
+   */
+  private fun startKenBurns() {
+    kenBurns?.cancel()
+    // Reset to identity first so a cancelled mid-animation transform never lingers on the new shot.
+    photo.scaleX = 1f
+    photo.scaleY = 1f
+    photo.translationX = 0f
+    photo.translationY = 0f
+    if (settings.fit != ScreensaverConfig.FIT_FILL) return
+    val w = (if (photo.width > 0) photo.width else context.resources.displayMetrics.widthPixels)
+    val h = (if (photo.height > 0) photo.height else context.resources.displayMetrics.heightPixels)
+    photo.pivotX = w / 2f
+    photo.pivotY = h / 2f
+    val pan = (BIG - 1f) / 2f // max translation fraction that stays within the overscan at scale BIG
+    val set = AnimatorSet()
+    when ((kenBurnsStyle++ % 4 + 4) % 4) {
+      0 -> // slow zoom in
+      set.playTogether(
+          ObjectAnimator.ofFloat(photo, View.SCALE_X, 1f, BIG),
+          ObjectAnimator.ofFloat(photo, View.SCALE_Y, 1f, BIG))
+      1 -> // slow zoom out
+      set.playTogether(
+          ObjectAnimator.ofFloat(photo, View.SCALE_X, BIG, 1f),
+          ObjectAnimator.ofFloat(photo, View.SCALE_Y, BIG, 1f))
+      2 -> { // pan down (hold the zoom so the edges stay covered)
+        photo.scaleX = BIG
+        photo.scaleY = BIG
+        set.playTogether(ObjectAnimator.ofFloat(photo, View.TRANSLATION_Y, pan * h, -pan * h))
+      }
+      else -> { // pan up
+        photo.scaleX = BIG
+        photo.scaleY = BIG
+        set.playTogether(ObjectAnimator.ofFloat(photo, View.TRANSLATION_Y, -pan * h, pan * h))
+      }
+    }
+    set.duration = intervalMs() + 1200L // outlast the dwell so the motion never visibly stalls
+    set.interpolator = AccelerateDecelerateInterpolator()
+    set.start()
+    kenBurns = set
+  }
+
+  private fun cancelKenBurns() {
+    kenBurns?.cancel()
+    kenBurns = null
+    if (this::photo.isInitialized) {
+      photo.scaleX = 1f
+      photo.scaleY = 1f
+      photo.translationX = 0f
+      photo.translationY = 0f
+    }
   }
 
   // --- default-feed sources (tried in turn by [fetchWebPhoto]) ----------------
@@ -972,6 +1138,12 @@ class PhotoFrameController(
 
   private val MATCH = FrameLayout.LayoutParams.MATCH_PARENT
   private val WRAP = FrameLayout.LayoutParams.WRAP_CONTENT
+  // Ken Burns overscan: the photo is scaled to this at the zoomed end / throughout a pan, giving
+  // pan styles room to travel without exposing the black background behind the image.
+  private val BIG = 1.12f
+  // Cap on consecutive shared-album re-resolves before yielding to the built-in feed (a real
+  // sustained outage), reset on any successful photo. See [reresolveOrFallback].
+  private val MAX_RERESOLVE = 3
   private fun dp(v: Int): Int = (v * context.resources.displayMetrics.density).toInt()
 
   private companion object {

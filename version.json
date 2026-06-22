@@ -1,6 +1,6 @@
 {
-  "versionCode": 46,
-  "versionName": "1.45",
+  "versionCode": 48,
+  "versionName": "1.47",
   "apkUrl": "https://github.com/starbrightlab/immortal/releases/latest/download/immortal.apk",
-  "notes": "Immortal 1.45: The phone remote gains media controls \u2014 a Now Playing tab with album art, title and artist, a scrubber, and play/pause/skip for whatever's playing on the Portal. It works with any media app, and from one phone you can control playback on every Portal on your Wi-Fi."
+  "notes": "Fixes the phone remote going partly unresponsive after an app update: Power, Back, Home, the touchpad, and page up/down now reliably reconnect when you open the remote (this also restores the Calls-to-home bridge and quick buttons, which share the same service). Also adds volume controls (with mute) to the remote's Media tab, a Screensaver button to the remote, and album art now shows in the home mini-player for tracks that provide it as a URI."
 }
