@@ -53,7 +53,7 @@ docs/                        MkDocs site; docs/features/*.md and docs/design/*.m
 scripts/                     validate_catalog.py, cut-release.sh, check-version-sync.sh, …
 catalog.json                 hosted app-store catalog (schema v2)
 version.json                 self-update manifest (versionCode/versionName + apkUrl)
-.kiro/skills/                bundled agent skills (see "Agent skills" below)
+skills/                      portable agent skills, Agent Skills SKILL.md format (see below)
 ```
 
 ### Finding code by feature
@@ -80,9 +80,14 @@ When in doubt, search by symbol rather than guessing the file.
 ## Fleet management and the `fleetctl` skill
 
 A wall of Portals is managed over WiFi with the **`fleetctl`** CLI, which drives each device's
-in-app Fleet Agent HTTP API. There is a bundled agent skill that documents the full workflow:
+in-app Fleet Agent HTTP API. The full workflow is captured as a portable agent skill:
 
-- **Skill:** [`.kiro/skills/immortal-fleet/SKILL.md`](.kiro/skills/immortal-fleet/SKILL.md)
+- **Skill:** [`skills/immortal-fleet/SKILL.md`](skills/immortal-fleet/SKILL.md)
+- **Format:** the open [Agent Skills](https://agents.md) `SKILL.md` convention — YAML
+  frontmatter (`name` + `description`) plus a Markdown body — which is read by Claude Code,
+  Cursor, GitHub Copilot, Codex CLI, Gemini CLI, Windsurf, OpenCode, and other agents. Tools
+  that auto-discover skills from their own directory (e.g. `.claude/skills/`, `.kiro/skills/`)
+  can symlink or copy this folder; nothing here is tool-specific.
 - **Use it when** deploying/installing/updating apps on Portals, pushing config, managing the
   screensaver or calendar over the air, iterating on a local build (`dev update`), browsing
   device files, or reading logcat/diagnostics across one or many devices.
