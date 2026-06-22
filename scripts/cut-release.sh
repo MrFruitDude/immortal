@@ -140,7 +140,9 @@ gh release create "$tag" --repo "$repo" --draft --title "Immortal $version_name"
 # URL is latest/download/immortal.apk). $kit is already named portal-kit.zip.
 cp "$apk" "$tmp/immortal.apk"
 gh release upload "$tag" "$tmp/immortal.apk" "$kit" --repo "$repo" --clobber
-gh release edit "$tag" --repo "$repo" --draft=false >/dev/null
+# --latest is explicit: a draft promoted via edit isn't always auto-marked "latest", and the
+# stable self-update URL (releases/latest/download/…) only points here when this is Latest.
+gh release edit "$tag" --repo "$repo" --draft=false --latest >/dev/null
 echo "  published $tag with immortal.apk + portal-kit.zip"
 
 step "Verify the published release"
@@ -156,10 +158,19 @@ verify_url(){
 }
 verify_url "$stable_apk_url"
 verify_url "$stable_kit_url"
-curl -fsSL -o "$tmp/pub.apk" "$stable_apk_url"
-pub_code="$("$bt/aapt" dump badging "$tmp/pub.apk" | sed -n "s/^package:.*versionCode='\([0-9]*\)'.*/\1/p")"
-[ "$pub_code" = "$new_code" ] || die "published immortal.apk is versionCode $pub_code, expected $new_code"
-echo "  published immortal.apk is versionCode $pub_code ✓"
+# Confirm the uploaded build is the right one by reading the TAG-specific asset directly. Unlike
+# latest/download, this isn't behind the "latest" redirect — whose CDN copy can lag ~30s after
+# publish (a benign transient for self-update, but it would false-fail a one-shot check here).
+pub_code=""
+for i in $(seq 1 6); do
+  if curl -fsSL -o "$tmp/pub.apk" "https://github.com/$repo/releases/download/$tag/immortal.apk" 2>/dev/null; then
+    pub_code="$("$bt/aapt" dump badging "$tmp/pub.apk" 2>/dev/null | sed -n "s/^package:.*versionCode='\([0-9]*\)'.*/\1/p")"
+    [ "$pub_code" = "$new_code" ] && break
+  fi
+  sleep 5
+done
+[ "$pub_code" = "$new_code" ] || die "uploaded immortal.apk is versionCode ${pub_code:-?}, expected $new_code"
+echo "  uploaded immortal.apk is versionCode $pub_code ✓"
 
 echo
 echo "✓ Immortal $version_name (versionCode $new_code) released."
