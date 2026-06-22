@@ -109,6 +109,19 @@ Quick reference (run from `provisioning/`):
 - **Match existing style.** Keep changes focused; prefer editing over rewrites. Reuse existing
   subsystems (the Fleet routes, for example, are a pure consumer of the catalog/installer/
   settings — don't duplicate that logic).
+- **Copyright headers: never use the Meta Platforms template.** Many AI tools default to emitting
+  `Copyright (c) Meta Platforms, Inc. and affiliates.` (a holdover from the original template this
+  repo was derived from). **Do not** add that line to any file. New source files use exactly:
+  ```
+  /*
+   * Copyright (c) 2026 Starbright Lab.
+   *
+   * This source code is licensed under the MIT license found in the
+   * LICENSE file in the root directory of this source tree.
+   */
+  ```
+  Immortal is **not affiliated with Meta** (see Trademark / scope below), so a Meta copyright line
+  is both wrong and misleading. If you copy an existing file as a starting point, fix the header.
 - **Release builds must be signed with the same key every time** — in-place self-update and
   `dev update` are signature-checked by Android. Signing comes from `keystore.properties` (repo
   root, git-ignored) or `~/.immortal-signing/` (preferred). **Never commit a keystore.**
