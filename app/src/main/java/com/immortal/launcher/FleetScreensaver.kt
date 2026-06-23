@@ -31,6 +31,56 @@ import org.json.JSONObject
  */
 object FleetScreensaver {
 
+  internal interface Writer {
+    fun setEnabled(value: Boolean)
+    fun useDefault()
+    fun setFolder(path: String)
+    fun setAlbumUrl(url: String)
+    fun setImmich(url: String, key: String)
+    fun setSmb(host: String, share: String, path: String, user: String, pass: String)
+    fun setDav(url: String, user: String, pass: String)
+    fun setWebUrl(url: String)
+    fun setAlbumRefreshMin(value: Int)
+    fun setFit(value: String)
+    fun setInterval(value: Int)
+    fun setShuffle(value: Boolean)
+    fun setIncludeVideo(value: Boolean)
+    fun setBatterySaver(value: Boolean)
+    fun setShowNowPlaying(value: Boolean)
+    fun setPresenceMode(value: FrameMode)
+    fun setIdleSleepMin(value: Int)
+    fun setOvernightEnabled(value: Boolean)
+    fun setOvernightStartMin(value: Int)
+    fun setOvernightEndMin(value: Int)
+  }
+
+  private class AndroidWriter(private val context: Context) : Writer {
+    override fun setEnabled(value: Boolean) = ScreensaverConfig.setEnabled(context, value)
+    override fun useDefault() = ScreensaverConfig.useDefault(context)
+    override fun setFolder(path: String) = ScreensaverConfig.setFolder(context, path)
+    override fun setAlbumUrl(url: String) = ScreensaverConfig.setAlbumUrl(context, url)
+    override fun setImmich(url: String, key: String) = ScreensaverConfig.setImmich(context, url, key)
+    override fun setSmb(host: String, share: String, path: String, user: String, pass: String) =
+        ScreensaverConfig.setSmb(context, host, share, path, user, pass)
+    override fun setDav(url: String, user: String, pass: String) =
+        ScreensaverConfig.setDav(context, url, user, pass)
+    override fun setWebUrl(url: String) = ScreensaverConfig.setWebUrl(context, url)
+    override fun setAlbumRefreshMin(value: Int) = ScreensaverConfig.setAlbumRefreshMin(context, value)
+    override fun setFit(value: String) = ScreensaverConfig.setFit(context, value)
+    override fun setInterval(value: Int) = ScreensaverConfig.setInterval(context, value)
+    override fun setShuffle(value: Boolean) = ScreensaverConfig.setShuffle(context, value)
+    override fun setIncludeVideo(value: Boolean) = ScreensaverConfig.setIncludeVideo(context, value)
+    override fun setBatterySaver(value: Boolean) = ScreensaverConfig.setBatterySaver(context, value)
+    override fun setShowNowPlaying(value: Boolean) = ScreensaverConfig.setShowNowPlaying(context, value)
+    override fun setPresenceMode(value: FrameMode) = ScreensaverConfig.setPresenceMode(context, value)
+    override fun setIdleSleepMin(value: Int) = ScreensaverConfig.setIdleSleepMin(context, value)
+    override fun setOvernightEnabled(value: Boolean) =
+        ScreensaverConfig.setOvernightEnabled(context, value)
+    override fun setOvernightStartMin(value: Int) =
+        ScreensaverConfig.setOvernightStartMin(context, value)
+    override fun setOvernightEndMin(value: Int) = ScreensaverConfig.setOvernightEndMin(context, value)
+  }
+
   /**
    * Pure render of the screensaver display settings — delegates to the `screensaver` settings
    * domain ([com.immortal.launcher.settings.SettingsDomains.screensaver]), which owns the flat wire
@@ -63,15 +113,7 @@ object FleetScreensaver {
           .put("albumUrl", s.albumUrl ?: "")
 
   /** The active photo-source as a Setup-form key (immich/smb/dav/web/album/default). Pure. */
-  internal fun currentSource(s: ScreensaverConfig.Settings): String =
-      when {
-        s.usesImmich -> "immich"
-        s.usesSmb -> "smb"
-        s.usesDav -> "dav"
-        s.usesWebUrl -> "web"
-        s.usesUrl -> "album"
-        else -> "default"
-      }
+  internal fun currentSource(s: ScreensaverConfig.Settings): String = PhotoFrameSource.from(s).setupKey
 
   /** Coerce a fit string to a known value, or null if unrecognised. Pure. */
   internal fun coerceFit(v: String?): String? =
@@ -93,31 +135,33 @@ object FleetScreensaver {
    * (via [applied] containing any "overnight*" key) the caller uses to reschedule the
    * overnight window.
    */
-  fun apply(context: Context, body: JSONObject): List<String> {
+  fun apply(context: Context, body: JSONObject): List<String> = apply(AndroidWriter(context), body)
+
+  internal fun apply(writer: Writer, body: JSONObject): List<String> {
     val applied = ArrayList<String>()
 
     if (body.has("enabled")) {
-      ScreensaverConfig.setEnabled(context, body.optBoolean("enabled"))
+      writer.setEnabled(body.optBoolean("enabled"))
       applied.add("enabled")
     }
     // Source: "default" resets to the built-in feed; folder/url are driven by their
     // value keys below (which also flip the source), so an explicit folder/url here
     // is a no-op unless its path/url is supplied.
     if (body.has("source") && body.optString("source") == ScreensaverConfig.SOURCE_DEFAULT) {
-      ScreensaverConfig.useDefault(context)
+      writer.useDefault()
       applied.add("source")
     }
     if (body.has("folderPath")) {
       val p = body.optString("folderPath")
       if (p.isNotBlank()) {
-        ScreensaverConfig.setFolder(context, p)
+        writer.setFolder(p)
         applied.add("folderPath")
       }
     }
     if (body.has("albumUrl")) {
       val u = body.optString("albumUrl")
       if (u.isNotBlank()) {
-        ScreensaverConfig.setAlbumUrl(context, u)
+        writer.setAlbumUrl(u)
         applied.add("albumUrl")
       }
     }
@@ -129,7 +173,7 @@ object FleetScreensaver {
       val url = body.optString("immichUrl")
       val key = body.optString("immichKey")
       if (url.isNotBlank() && key.isNotBlank()) {
-        ScreensaverConfig.setImmich(context, url, key)
+        writer.setImmich(url, key)
         applied.add("immich")
       }
     }
@@ -137,75 +181,75 @@ object FleetScreensaver {
       val host = body.optString("smbHost")
       val share = body.optString("smbShare")
       if (host.isNotBlank() && share.isNotBlank()) {
-        ScreensaverConfig.setSmb(
-            context, host, share, body.optString("smbPath"), body.optString("smbUser"), body.optString("smbPass"))
+        writer.setSmb(
+            host, share, body.optString("smbPath"), body.optString("smbUser"), body.optString("smbPass"))
         applied.add("smb")
       }
     }
     run {
       val url = body.optString("davUrl")
       if (url.isNotBlank()) {
-        ScreensaverConfig.setDav(context, url, body.optString("davUser"), body.optString("davPass"))
+        writer.setDav(url, body.optString("davUser"), body.optString("davPass"))
         applied.add("dav")
       }
     }
     run {
       val url = body.optString("webUrl")
       if (url.isNotBlank()) {
-        ScreensaverConfig.setWebUrl(context, url)
+        writer.setWebUrl(url)
         applied.add("webUrl")
       }
     }
     if (body.has("albumRefreshMin")) {
-      ScreensaverConfig.setAlbumRefreshMin(context, body.optInt("albumRefreshMin"))
+      writer.setAlbumRefreshMin(body.optInt("albumRefreshMin"))
       applied.add("albumRefreshMin")
     }
     coerceFit(if (body.has("fit")) body.optString("fit") else null)?.let {
-      ScreensaverConfig.setFit(context, it)
+      writer.setFit(it)
       applied.add("fit")
     }
     if (body.has("intervalSec")) {
-      ScreensaverConfig.setInterval(context, body.optInt("intervalSec"))
+      writer.setInterval(body.optInt("intervalSec"))
       applied.add("intervalSec")
     }
     if (body.has("shuffle")) {
-      ScreensaverConfig.setShuffle(context, body.optBoolean("shuffle"))
+      writer.setShuffle(body.optBoolean("shuffle"))
       applied.add("shuffle")
     }
     if (body.has("includeVideo")) {
-      ScreensaverConfig.setIncludeVideo(context, body.optBoolean("includeVideo"))
+      writer.setIncludeVideo(body.optBoolean("includeVideo"))
       applied.add("includeVideo")
     }
     if (body.has("batterySaver")) {
-      ScreensaverConfig.setBatterySaver(context, body.optBoolean("batterySaver"))
+      writer.setBatterySaver(body.optBoolean("batterySaver"))
       applied.add("batterySaver")
     }
     if (body.has("showNowPlaying")) {
-      ScreensaverConfig.setShowNowPlaying(context, body.optBoolean("showNowPlaying"))
+      writer.setShowNowPlaying(body.optBoolean("showNowPlaying"))
       applied.add("showNowPlaying")
     }
     if (body.has("presenceMode")) {
       // Ignore an unrecognised mode rather than defaulting (which would silently flip
       // the setting on a typo); a valid value is applied.
       coercePresenceMode(body.optString("presenceMode"))?.let {
-        ScreensaverConfig.setPresenceMode(context, it)
+        writer.setPresenceMode(it)
         applied.add("presenceMode")
       }
     }
     if (body.has("idleSleepMin")) {
-      ScreensaverConfig.setIdleSleepMin(context, body.optInt("idleSleepMin"))
+      writer.setIdleSleepMin(body.optInt("idleSleepMin"))
       applied.add("idleSleepMin")
     }
     if (body.has("overnightEnabled")) {
-      ScreensaverConfig.setOvernightEnabled(context, body.optBoolean("overnightEnabled"))
+      writer.setOvernightEnabled(body.optBoolean("overnightEnabled"))
       applied.add("overnightEnabled")
     }
     if (body.has("overnightStartMin")) {
-      ScreensaverConfig.setOvernightStartMin(context, body.optInt("overnightStartMin"))
+      writer.setOvernightStartMin(body.optInt("overnightStartMin"))
       applied.add("overnightStartMin")
     }
     if (body.has("overnightEndMin")) {
-      ScreensaverConfig.setOvernightEndMin(context, body.optInt("overnightEndMin"))
+      writer.setOvernightEndMin(body.optInt("overnightEndMin"))
       applied.add("overnightEndMin")
     }
     return applied

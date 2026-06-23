@@ -7,11 +7,7 @@
 
 package com.immortal.launcher
 
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
-import android.content.pm.PackageInstaller
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -222,7 +218,9 @@ object StoreCatalog {
         } else {
           // Android-10 models — and Gen-1 once the overlay fix makes the stock
           // dialog visible — use the system installer dialog.
-          commit(context, app.packageName, apk)
+          PackageInstallSessions.commit(context, apk, STORE_INSTALL_ACTION) {
+            putExtra(STORE_EXTRA_PKG, app.packageName)
+          }
         }
       } catch (t: Throwable) {
         main.post { status(app.packageName, "Error: ${t.message ?: t.javaClass.simpleName}") }
@@ -240,26 +238,6 @@ object StoreCatalog {
             ?: JSONObject(httpGet("https://f-droid.org/api/v1/packages/$id"))
                 .getLong("suggestedVersionCode")
     return "https://f-droid.org/repo/${id}_$vc.apk"
-  }
-
-  private fun commit(context: Context, pkg: String, apk: File) {
-    val pi = context.packageManager.packageInstaller
-    val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
-    val sessionId = pi.createSession(params)
-    pi.openSession(sessionId).use { session ->
-      session.openWrite("base.apk", 0, apk.length()).use { out ->
-        apk.inputStream().use { it.copyTo(out) }
-        session.fsync(out)
-      }
-      val flags =
-          if (Build.VERSION.SDK_INT >= 31)
-              PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
-          else PendingIntent.FLAG_UPDATE_CURRENT
-      val intent =
-          Intent(STORE_INSTALL_ACTION).setPackage(context.packageName).putExtra(STORE_EXTRA_PKG, pkg)
-      val pending = PendingIntent.getBroadcast(context, sessionId, intent, flags)
-      session.commit(pending.intentSender)
-    }
   }
 
   // --- net helpers ------------------------------------------------------------

@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.json.JSONObject
 
 /** Pure JSON-shaping + coercion for the fleet `/screensaver` endpoint (no Context). */
 class FleetScreensaverTest {
@@ -148,5 +149,156 @@ class FleetScreensaverTest {
         src(
             ScreensaverConfig.Settings(
                 source = ScreensaverConfig.SOURCE_DAV, davUrl = "https://dav.example/photos")))
+  }
+
+  @Test
+  fun apply_writesOnlyPresentDisplayKeys() {
+    val writer = RecordingWriter()
+    val applied =
+        FleetScreensaver.apply(
+            writer,
+            JSONObject()
+                .put("enabled", false)
+                .put("fit", ScreensaverConfig.FIT_FIT)
+                .put("intervalSec", 45)
+                .put("presenceMode", "presence"))
+
+    assertEquals(listOf("enabled", "fit", "intervalSec", "presenceMode"), applied)
+    assertEquals(
+        listOf("enabled=false", "fit=fit", "interval=45", "presence=PRESENCE"),
+        writer.calls,
+    )
+  }
+
+  @Test
+  fun apply_keepsCredentialSourcesAtomic() {
+    val partialWriter = RecordingWriter()
+    val partialApplied =
+        FleetScreensaver.apply(partialWriter, JSONObject().put("immichUrl", "https://immich.local"))
+
+    assertEquals(emptyList<String>(), partialApplied)
+    assertEquals(emptyList<String>(), partialWriter.calls)
+
+    val fullWriter = RecordingWriter()
+    val fullApplied =
+        FleetScreensaver.apply(
+            fullWriter,
+            JSONObject().put("immichUrl", "https://immich.local").put("immichKey", "secret"),
+        )
+
+    assertEquals(listOf("immich"), fullApplied)
+    assertEquals(listOf("immich=https://immich.local|secret"), fullWriter.calls)
+  }
+
+  @Test
+  fun apply_ignoresUnknownFitAndPresenceMode() {
+    val writer = RecordingWriter()
+    val applied =
+        FleetScreensaver.apply(
+            writer,
+            JSONObject().put("fit", "stretch").put("presenceMode", "sometimes"),
+        )
+
+    assertEquals(emptyList<String>(), applied)
+    assertEquals(emptyList<String>(), writer.calls)
+  }
+
+  @Test
+  fun apply_sourceResetAndFolderUseWriterSeam() {
+    val writer = RecordingWriter()
+    val applied =
+        FleetScreensaver.apply(
+            writer,
+            JSONObject()
+                .put("source", ScreensaverConfig.SOURCE_DEFAULT)
+                .put("folderPath", "/sdcard/Pictures"),
+        )
+
+    assertEquals(listOf("source", "folderPath"), applied)
+    assertEquals(listOf("default", "folder=/sdcard/Pictures"), writer.calls)
+  }
+
+  private class RecordingWriter : FleetScreensaver.Writer {
+    val calls = mutableListOf<String>()
+
+    override fun setEnabled(value: Boolean) {
+      calls += "enabled=$value"
+    }
+
+    override fun useDefault() {
+      calls += "default"
+    }
+
+    override fun setFolder(path: String) {
+      calls += "folder=$path"
+    }
+
+    override fun setAlbumUrl(url: String) {
+      calls += "album=$url"
+    }
+
+    override fun setImmich(url: String, key: String) {
+      calls += "immich=$url|$key"
+    }
+
+    override fun setSmb(host: String, share: String, path: String, user: String, pass: String) {
+      calls += "smb=$host|$share|$path|$user|$pass"
+    }
+
+    override fun setDav(url: String, user: String, pass: String) {
+      calls += "dav=$url|$user|$pass"
+    }
+
+    override fun setWebUrl(url: String) {
+      calls += "web=$url"
+    }
+
+    override fun setAlbumRefreshMin(value: Int) {
+      calls += "albumRefresh=$value"
+    }
+
+    override fun setFit(value: String) {
+      calls += "fit=$value"
+    }
+
+    override fun setInterval(value: Int) {
+      calls += "interval=$value"
+    }
+
+    override fun setShuffle(value: Boolean) {
+      calls += "shuffle=$value"
+    }
+
+    override fun setIncludeVideo(value: Boolean) {
+      calls += "includeVideo=$value"
+    }
+
+    override fun setBatterySaver(value: Boolean) {
+      calls += "batterySaver=$value"
+    }
+
+    override fun setShowNowPlaying(value: Boolean) {
+      calls += "showNowPlaying=$value"
+    }
+
+    override fun setPresenceMode(value: FrameMode) {
+      calls += "presence=${value.name}"
+    }
+
+    override fun setIdleSleepMin(value: Int) {
+      calls += "idleSleep=$value"
+    }
+
+    override fun setOvernightEnabled(value: Boolean) {
+      calls += "overnightEnabled=$value"
+    }
+
+    override fun setOvernightStartMin(value: Int) {
+      calls += "overnightStart=$value"
+    }
+
+    override fun setOvernightEndMin(value: Int) {
+      calls += "overnightEnd=$value"
+    }
   }
 }

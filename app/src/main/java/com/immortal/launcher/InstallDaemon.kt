@@ -81,7 +81,10 @@ object InstallDaemon {
   /** Pure paused decision (extracted for testing): paused only when there is no
    *  silent path (daemon) AND no working dialog (overlay fix) on a Gen-1. */
   internal fun isPaused(legacy: Boolean, daemonAvailable: Boolean, dialogFixed: Boolean): Boolean =
-      legacy && !daemonAvailable && !dialogFixed
+      InstallLifecycle.isPaused(legacy, daemonAvailable, dialogFixed)
+
+  fun installPlan(context: Context): InstallLifecycle.Plan =
+      InstallLifecycle.plan(legacyInstaller(), isAvailable(context), installerDialogFixed(context))
 
   /**
    * Gen-1 with the daemon down AND no working dialog: on-device installs are truly
@@ -89,7 +92,7 @@ object InstallDaemon {
    * works, so callers fall through to PackageInstaller rather than refusing.
    */
   fun installPaused(context: Context): Boolean =
-      isPaused(legacyInstaller(), isAvailable(context), installerDialogFixed(context))
+      installPlan(context).paused
 
   /**
    * Queue [apk] for the daemon and block (on a background thread) until it

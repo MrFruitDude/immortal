@@ -581,14 +581,12 @@ private fun LauncherScreen(
   LaunchedEffect(Unit) { assignments.putAll(UserLayout.load(context)) }
   val appsEff =
       remember(apps, assignments.toMap()) {
-        apps.map { a ->
-          val pkg = a.component.packageName
-          val eff = if (assignments.containsKey(pkg)) assignments[pkg]!!.ifEmpty { null } else a.folder
-          a.copy(folder = eff)
-        }
+        val effective = HomeLayoutModel.effectiveApps(apps.toLayoutRefs(), assignments)
+        val foldersByPackage = effective.associate { it.packageName to it.folder }
+        apps.map { it.copy(folder = foldersByPackage[it.component.packageName]) }
       }
   val ungrouped = remember(appsEff) { appsEff.filter { it.folder == null } }
-  val folderNames = remember(appsEff) { appsEff.mapNotNull { it.folder }.distinct().sorted() }
+  val folderNames = remember(appsEff) { HomeLayoutModel.folderNames(appsEff.toLayoutRefs()) }
 
   // --- unified, fully-reorderable home grid -----------------------------------
   // Every top-level tile — built-ins, widgets, folders, and ungrouped apps — has a stable key and
@@ -637,32 +635,29 @@ private fun LauncherScreen(
   var renaming by remember { mutableStateOf<String?>(null) }
 
   fun persist() = UserLayout.save(context, assignments.toMap())
+  fun replaceAssignments(next: Map<String, String>) {
+    assignments.clear()
+    assignments.putAll(next)
+    persist()
+  }
   fun assign(pkg: String, folder: String) {
     assignments[pkg] = folder
     persist()
   }
   fun createFolder(a: String, b: String, name: String) {
-    val n = name.trim().ifEmpty { "Folder" }
-    assignments[a] = n
-    assignments[b] = n
-    persist()
-    openFolder = n
+    val result = HomeLayoutModel.createFolder(assignments, a, b, name)
+    replaceAssignments(result.assignments)
+    openFolder = result.folderName
   }
   fun renameFolder(old: String, raw: String) {
-    val new = raw.trim()
-    if (new.isEmpty() || new == old) return
-    appsEff.filter { it.folder == old }.forEach { assignments[it.component.packageName] = new }
-    persist()
-    openFolder = new
+    val result = HomeLayoutModel.renameFolder(appsEff.toLayoutRefs(), assignments, old, raw) ?: return
+    replaceAssignments(result.assignments)
+    openFolder = result.folderName
   }
   fun moveOut(pkg: String) {
-    val folder = appsEff.firstOrNull { it.component.packageName == pkg }?.folder ?: return
-    assignments[pkg] = "" // explicit ungroup
-    // No single-app folders: if only one remains, pop it out too.
-    val remaining = appsEff.filter { it.folder == folder && it.component.packageName != pkg }
-    if (remaining.size == 1) assignments[remaining[0].component.packageName] = ""
-    persist()
-    if (remaining.size <= 1) openFolder = null
+    val result = HomeLayoutModel.moveOut(appsEff.toLayoutRefs(), assignments, pkg) ?: return
+    replaceAssignments(result.assignments)
+    if (result.closeFolder) openFolder = null
   }
   fun targetSlotAt(pos: Offset): Int? =
       slotBounds.entries.firstOrNull { it.value.contains(pos) }?.key
@@ -1243,6 +1238,9 @@ private const val BUILTIN_STORE = "builtin:store"
 private const val BUILTIN_UPDATES = "builtin:updates"
 
 private const val UPDATE_CHECK_INTERVAL_MS = 6L * 60 * 60 * 1000 // 6 hours
+
+private fun List<AppEntry>.toLayoutRefs(): List<HomeLayoutModel.AppRef> =
+    map { HomeLayoutModel.AppRef(it.component.packageName, it.folder) }
 
 // --- tile sizing ----------------------------------------------------------------
 // The grid's tile edge, provided once at the top of the tree so every tile
