@@ -146,7 +146,7 @@ private fun ImmortalSettingsScreen() {
       SettingsList(
           SettingsDomains.immortal,
           settings,
-          exclude = setOf("multiRoomEnabled", "snapcastHost", "maUsername", "maPassword"),
+          exclude = setOf("multiRoomEnabled", "snapcastHost", "maPort", "maUsername", "maPassword"),
       ) { k, v ->
         apply(k, v)
       }
@@ -260,6 +260,7 @@ internal fun MultiRoomScreen(onBack: () -> Unit) {
   val context = LocalContext.current
   var enabled by remember { mutableStateOf(ImmortalSettings.multiRoomEnabled(context)) }
   var host by remember { mutableStateOf(ImmortalSettings.snapcastHost(context)) }
+  var maPort by remember { mutableStateOf(ImmortalSettings.maPort(context).toString()) }
   var maUser by remember { mutableStateOf(ImmortalSettings.maUser(context)) }
   var maPass by remember { mutableStateOf(ImmortalSettings.maPass(context)) }
 
@@ -268,6 +269,7 @@ internal fun MultiRoomScreen(onBack: () -> Unit) {
   // Chain the text fields so the keyboard's "Next" jumps to the following field instead of
   // closing — the IP field focuses the username, which focuses the password.
   val focusManager = LocalFocusManager.current
+  val portFocus = remember { FocusRequester() }
   val userFocus = remember { FocusRequester() }
   val passFocus = remember { FocusRequester() }
 
@@ -374,7 +376,7 @@ internal fun MultiRoomScreen(onBack: () -> Unit) {
                 },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                keyboardActions = KeyboardActions(onNext = { userFocus.requestFocus() }),
+                keyboardActions = KeyboardActions(onNext = { portFocus.requestFocus() }),
                 label = { Text("Music Assistant / Snapcast server IP") },
                 modifier = Modifier.weight(1f),
             )
@@ -395,7 +397,25 @@ internal fun MultiRoomScreen(onBack: () -> Unit) {
               )
             }
           }
-          // Music Assistant login — only used to forward play/pause/skip to MA.
+          // Music Assistant API port — 8095 by default; only change it if MA's web server moved.
+          OutlinedTextField(
+              value = maPort,
+              onValueChange = {
+                maPort = it.filter(Char::isDigit).take(5)
+                maPort.toIntOrNull()?.let { p -> ImmortalSettings.setMaPort(context, p) }
+              },
+              singleLine = true,
+              keyboardOptions =
+                  KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+              keyboardActions = KeyboardActions(onNext = { userFocus.requestFocus() }),
+              label = { Text("Music Assistant port (default 8095)") },
+              modifier =
+                  Modifier.fillMaxWidth()
+                      .padding(start = 18.dp, end = 18.dp, top = 4.dp)
+                      .focusRequester(portFocus),
+          )
+          // Music Assistant login — only used to forward play/pause/skip to MA, and only when MA's
+          // optional authentication is enabled. Leave blank for a stock server.
           OutlinedTextField(
               value = maUser,
               onValueChange = {

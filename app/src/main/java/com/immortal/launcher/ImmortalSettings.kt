@@ -21,6 +21,9 @@ object ImmortalSettings {
 
   private const val PREFS = "immortal_settings"
 
+  // Music Assistant's WebSocket API port. MA's web server listens on 8095 by default.
+  const val DEFAULT_MA_PORT = 8095
+
   // Weather temperature unit.
   const val UNIT_AUTO = "auto" // follow the device locale
   const val UNIT_F = "f"
@@ -57,8 +60,12 @@ object ImmortalSettings {
       // snapserver at [snapcastHost]). Off until configured.
       val multiRoomEnabled: Boolean = false,
       val snapcastHost: String = "",
-      // Music Assistant login — needed only to send transport (play/pause/next) to MA's
-      // authenticated API; the now-playing metadata itself needs no credentials.
+      // Port of Music Assistant's WebSocket API on [snapcastHost]. MA's web server defaults to
+      // 8095 (it rolls to the next free port if that's taken), so this is configurable.
+      val maPort: Int = DEFAULT_MA_PORT,
+      // Music Assistant login — needed only when MA's optional authentication is enabled, and only
+      // to send transport (play/pause/next) to its authenticated API; the now-playing metadata
+      // itself needs no credentials. Leave blank for a stock server with auth disabled.
       val maUsername: String = "",
       val maPassword: String = "",
   )
@@ -76,6 +83,7 @@ object ImmortalSettings {
         hideStatusBar = p.getBoolean("hide_status_bar", true),
         multiRoomEnabled = p.getBoolean("multiroom_enabled", false),
         snapcastHost = p.getString("snapcast_host", "") ?: "",
+        maPort = p.getInt("ma_port", DEFAULT_MA_PORT),
         maUsername = p.getString("ma_username", "") ?: "",
         maPassword = p.getString("ma_password", "") ?: "",
     )
@@ -84,6 +92,8 @@ object ImmortalSettings {
   fun multiRoomEnabled(c: Context): Boolean = prefs(c).getBoolean("multiroom_enabled", false)
 
   fun snapcastHost(c: Context): String = prefs(c).getString("snapcast_host", "")?.trim() ?: ""
+
+  fun maPort(c: Context): Int = prefs(c).getInt("ma_port", DEFAULT_MA_PORT)
 
   fun maUser(c: Context): String = prefs(c).getString("ma_username", "")?.trim() ?: ""
 
@@ -94,6 +104,9 @@ object ImmortalSettings {
 
   fun setSnapcastHost(c: Context, host: String) =
       prefs(c).edit().putString("snapcast_host", host.trim()).apply()
+
+  fun setMaPort(c: Context, port: Int) =
+      prefs(c).edit().putInt("ma_port", port.coerceIn(1, 65535)).apply()
 
   fun setMaUsername(c: Context, v: String) =
       prefs(c).edit().putString("ma_username", v.trim()).apply()

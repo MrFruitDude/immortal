@@ -255,7 +255,8 @@ class SettingsDomainTest {
         listOf(
             SettingsDomains.screensaver to setOf("enabled"),
             SettingsDomains.calendar to emptySet(),
-            SettingsDomains.immortal to setOf("multiRoomEnabled", "snapcastHost", "maUsername", "maPassword"),
+            SettingsDomains.immortal to
+                setOf("multiRoomEnabled", "snapcastHost", "maPort", "maUsername", "maPassword"),
         )
     rendered.forEach { (dom, exclude) ->
       val blank =

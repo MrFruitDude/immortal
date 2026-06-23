@@ -438,6 +438,16 @@ object SettingsDomains {
                       get = { it.snapcastHost },
                       set = ImmortalSettings::setSnapcastHost,
                       visible = { _, s -> s.multiRoomEnabled }),
+                  IntSpec(
+                      "maPort",
+                      "Music Assistant port",
+                      get = { it.maPort },
+                      set = ImmortalSettings::setMaPort,
+                      min = 1,
+                      max = 65535,
+                      asText = true,
+                      help = "Music Assistant's web server port — 8095 by default.",
+                      visible = { _, s -> s.multiRoomEnabled }),
                   StringSpec(
                       "maUsername",
                       "Music Assistant user",
@@ -462,12 +472,13 @@ object SettingsDomains {
                   "clockFormat" to "Clock",
                   "multiRoomEnabled" to "Audio",
                   "snapcastHost" to "Audio",
+                  "maPort" to "Audio",
                   "maUsername" to "Audio",
                   "maPassword" to "Audio"),
           defaults = { ImmortalSettings.Settings() },
           onApplied = { c, keys ->
             if ("hideStatusBar" in keys) SettingsGuard.applyStatusBar(c)
-            if (keys.any { it in setOf("multiRoomEnabled", "snapcastHost", "maUsername", "maPassword") })
+            if (keys.any { it in setOf("multiRoomEnabled", "snapcastHost", "maPort", "maUsername", "maPassword") })
                 MultiRoomService.sync(c)
           },
       )

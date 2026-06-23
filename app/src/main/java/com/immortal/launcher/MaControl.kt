@@ -20,15 +20,16 @@ import org.json.JSONObject
  * [MultiRoomService]) because MA's Snapcast stream is `canPlay=false` — the snapserver
  * can't drive playback, only MA's own API can.
  *
- * MA 2.9 requires auth: we `auth/login` with the user's MA username/password to get a
- * token, then `auth {token}` to authorize the socket, then `players/cmd/<cmd>`. The token
- * is cached in memory; on failure we re-login. The player to target is resolved from
- * `players/all` by matching our Snapcast client id/name, then routed to its sync group if
- * it's part of one.
+ * Authentication is optional — MA only requires it when its "users" feature is turned on. When
+ * a username/password are set we `auth/login` to get a token, then `auth {token}` to authorize
+ * the socket, then `players/cmd/<cmd>`; the token is cached in memory and we re-login on failure.
+ * With no credentials we leave the socket unauthenticated, which a stock MA server accepts. The
+ * player to target is resolved from `players/all` by matching our Snapcast client id/name, then
+ * routed to its sync group if it's part of one. The MA API port is configurable
+ * ([ImmortalSettings.maPort], default 8095).
  */
 object MaControl {
   private const val TAG = "ImmortalNowPlaying"
-  private const val MA_PORT = 8096
 
   @Volatile private var token: String? = null
   @Volatile private var cachedPlayerId: String? = null
@@ -37,34 +38,42 @@ object MaControl {
 
   private fun authStatus(s: String) = main.post { MultiRoomStatus.maAuth = s }
 
-  /** Test the MA credentials and report the result to the settings screen. */
+  /**
+   * Test the MA connection and report the result to the settings screen. With credentials it tests
+   * the login; with none it just confirms MA is reachable (a stock server needs no login).
+   */
   fun testLogin(context: Context) {
     val host = ImmortalSettings.snapcastHost(context)
+    val port = ImmortalSettings.maPort(context)
     val user = ImmortalSettings.maUser(context)
     val pass = ImmortalSettings.maPass(context)
     if (host.isBlank()) {
       authStatus("Set the server address first")
       return
     }
-    if (user.isBlank() || pass.isBlank()) {
-      authStatus("Enter your Music Assistant username and password")
-      return
-    }
-    authStatus("Signing in…")
+    authStatus(if (user.isBlank() || pass.isBlank()) "Connecting…" else "Signing in…")
     exec.execute {
-      val ws = MaWebSocket(host, MA_PORT)
+      val ws = MaWebSocket(host, port)
       if (!runCatching { ws.connect() }.getOrDefault(false)) {
-        authStatus("Can't reach Music Assistant at $host")
+        authStatus("Can't reach Music Assistant at $host:$port")
         return@execute
       }
       try {
         ws.readText()
-        token = null // force a fresh login so we actually test the typed credentials
-        val ok = authorize(ws, user, pass)
-        authStatus(if (ok) "Signed in to Music Assistant ✓" else "Invalid username or password")
-        // Sign-in is the last piece of setup, so kick the relay now that the config is
-        // complete — same as the Apply button. Without this the service stays as it was
-        // (often stuck "Connecting…") until the app is restarted.
+        val ok =
+            if (user.isBlank() || pass.isBlank()) {
+              // No credentials: confirm reachability only — MA's login is optional.
+              authStatus("Connected to Music Assistant — no login needed ✓")
+              true
+            } else {
+              token = null // force a fresh login so we actually test the typed credentials
+              val signedIn = authorize(ws, user, pass)
+              authStatus(if (signedIn) "Signed in to Music Assistant ✓" else "Invalid username or password")
+              signedIn
+            }
+        // A successful test is the last piece of setup, so kick the relay now that the config is
+        // complete — same as the Apply button. Without this the service stays as it was (often
+        // stuck "Connecting…") until the app is restarted.
         if (ok) main.post { MultiRoomService.sync(context.applicationContext) }
       } finally {
         ws.close()
@@ -86,10 +95,11 @@ object MaControl {
   fun nowPlaying(context: Context, clientId: String?, clientName: String?): NowPlayingState {
     val idle = NowPlayingState(PlaybackState.IDLE)
     val host = ImmortalSettings.snapcastHost(context)
+    val port = ImmortalSettings.maPort(context)
     val user = ImmortalSettings.maUser(context)
     val pass = ImmortalSettings.maPass(context)
-    if (host.isBlank() || user.isBlank() || pass.isBlank()) return idle
-    val ws = MaWebSocket(host, MA_PORT)
+    if (host.isBlank()) return idle
+    val ws = MaWebSocket(host, port)
     if (!runCatching { ws.connect() }.getOrDefault(false)) return idle
     return try {
       ws.readText() // server hello
@@ -151,29 +161,31 @@ object MaControl {
   /** Map a media-session transport action to MA, off the main thread. */
   fun command(context: Context, cmd: String, clientId: String?, clientName: String?) {
     val host = ImmortalSettings.snapcastHost(context)
+    val port = ImmortalSettings.maPort(context)
     val user = ImmortalSettings.maUser(context)
     val pass = ImmortalSettings.maPass(context)
-    if (host.isBlank() || user.isBlank()) {
-      Log.w(TAG, "MA control: not configured (need server + MA username/password)")
+    if (host.isBlank()) {
+      Log.w(TAG, "MA control: not configured (need a server address)")
       return
     }
     exec.execute {
-      runCatching { send(host, user, pass, cmd, clientId, clientName) }
+      runCatching { send(host, port, user, pass, cmd, clientId, clientName) }
           .onFailure { Log.w(TAG, "MA command '$cmd' failed: ${it.message}") }
     }
   }
 
   private fun send(
       host: String,
+      port: Int,
       user: String,
       pass: String,
       cmd: String,
       clientId: String?,
       clientName: String?,
   ) {
-    val ws = MaWebSocket(host, MA_PORT)
+    val ws = MaWebSocket(host, port)
     if (!ws.connect()) {
-      Log.w(TAG, "MA WS connect failed ($host:$MA_PORT)")
+      Log.w(TAG, "MA WS connect failed ($host:$port)")
       return
     }
     try {
@@ -188,8 +200,13 @@ object MaControl {
     }
   }
 
-  /** Authorize the socket: reuse a cached token, else log in to mint one. */
+  /**
+   * Authorize the socket: reuse a cached token, else log in to mint one. With no credentials this
+   * is a no-op success — MA's login is optional, and a stock server accepts an unauthenticated
+   * socket.
+   */
   private fun authorize(ws: MaWebSocket, user: String, pass: String): Boolean {
+    if (user.isBlank() || pass.isBlank()) return true
     token?.let { t ->
       send(ws, "auth", JSONObject().put("token", t).put("device_name", DEVICE))
       val r = await(ws, "auth")
