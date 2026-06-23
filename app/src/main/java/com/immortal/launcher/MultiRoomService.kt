@@ -48,10 +48,10 @@ class MultiRoomService : Service() {
   @Volatile private var lastCover: Bitmap? = null
   @Volatile private var userPaused = false
 
-  // Two now-playing sources, merged in [effective]: Snapcast carries metadata for MA's own
-  // library/radio streams (via control.py); MA's API fills in for streams that don't — an
-  // AirPlay receiver bridged to the group surfaces a bare Snapcast stream, so its metadata
-  // only exists in MA's player state. We dedupe so the MA poll doesn't re-fetch art each tick.
+  // Two now-playing sources, merged by [MultiRoomNowPlaying]: Snapcast carries metadata for MA's
+  // own library/radio streams (via control.py); MA's API fills in for streams that don't — an
+  // AirPlay receiver bridged to the group surfaces a bare Snapcast stream, so its metadata only
+  // exists in MA's player state. We dedupe so the MA poll doesn't re-fetch art each tick.
   @Volatile private var snapState: NowPlayingState? = null
   @Volatile private var maState: NowPlayingState? = null
   @Volatile private var lastEffectiveKey: String? = null
@@ -118,29 +118,11 @@ class MultiRoomService : Service() {
    * poll re-reports the same track every few seconds). Runs on main so the dedupe is race-free.
    */
   private fun applyEffective() {
-    val eff = effective()
+    val eff = MultiRoomNowPlaying.effective(snapState, maState)
     val key = "${eff.state}|${eff.title}|${eff.artist}|${eff.artUrl}"
     if (key == lastEffectiveKey) return
     lastEffectiveKey = key
     onState(eff)
-  }
-
-  /**
-   * Snapcast metadata wins whenever its stream carries a track (MA library/radio via control.py);
-   * the MA poll fills in otherwise — notably an AirPlay receiver bridged to the group.
-   *
-   * The MA fill-in is inherently device-aware: [MaControl.nowPlaying] reports only THIS Portal's
-   * own player (resolved by our snapclient identity) and only when MA marks that player playing,
-   * so a Portal that isn't playing shows nothing. We deliberately do NOT gate on the Snapcast
-   * stream's status here — that went stale when AirPlay rotated to a new stream id, wrongly
-   * blanking a card that was in fact playing.
-   */
-  private fun effective(): NowPlayingState {
-    fun NowPlayingState.hasTrack() =
-        title.isNotBlank() && (state == PlaybackState.PLAYING || state == PlaybackState.PAUSED)
-    snapState?.let { if (it.hasTrack()) return it }
-    maState?.let { if (it.hasTrack()) return it }
-    return NowPlayingState(PlaybackState.IDLE)
   }
 
   /** Poll MA for our player's current track (the AirPlay fill-in). Always runs while the relay

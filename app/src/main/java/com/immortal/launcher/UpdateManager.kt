@@ -7,10 +7,7 @@
 
 package com.immortal.launcher
 
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
-import android.content.pm.PackageInstaller
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -115,7 +112,7 @@ object UpdateManager {
           val ok = InstallDaemon.install(context, apk, "immortal-update")
           main.post { status(if (ok) "Updated" else "Update failed") }
         } else {
-          commit(context, apk)
+          PackageInstallSessions.commit(context, apk, UPDATE_INSTALL_ACTION)
         }
       } catch (t: Throwable) {
         main.post { status("Update failed: ${t.message ?: t.javaClass.simpleName}") }
@@ -137,30 +134,6 @@ object UpdateManager {
             else @Suppress("DEPRECATION") pi.versionCode.toLong()
           }
           .getOrDefault(0L)
-
-  private fun commit(context: Context, apk: File) {
-    val pi = context.packageManager.packageInstaller
-    val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
-    val sessionId = pi.createSession(params)
-    pi.openSession(sessionId).use { session ->
-      session.openWrite("base.apk", 0, apk.length()).use { out ->
-        apk.inputStream().use { it.copyTo(out) }
-        session.fsync(out)
-      }
-      val flags =
-          if (Build.VERSION.SDK_INT >= 31)
-              PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
-          else PendingIntent.FLAG_UPDATE_CURRENT
-      val pending =
-          PendingIntent.getBroadcast(
-              context,
-              sessionId,
-              Intent(UPDATE_INSTALL_ACTION).setPackage(context.packageName),
-              flags,
-          )
-      session.commit(pending.intentSender)
-    }
-  }
 
   private fun httpGet(spec: String): String = open(spec).inputStream.use {
     it.readBytes().toString(Charsets.UTF_8)

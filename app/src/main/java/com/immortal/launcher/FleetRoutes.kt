@@ -476,24 +476,7 @@ class FleetRoutes(private val context: Context) {
           }
           .getOrDefault(0L to "")
 
-  private data class InstallModeInfo(
-      val mode: String,
-      val daemonAvailable: Boolean,
-      val legacy: Boolean,
-      val dialogFixed: Boolean,
-      val paused: Boolean,
-  )
-
-  private fun installMode(): InstallModeInfo {
-    val daemon = InstallDaemon.isAvailable(context)
-    val paused = InstallDaemon.installPaused(context)
-    return InstallModeInfo(
-        modeFor(daemon, paused),
-        daemon,
-        InstallDaemon.legacyInstaller(),
-        InstallDaemon.installerDialogFixed(context),
-        paused)
-  }
+  private fun installMode(): InstallLifecycle.Plan = InstallDaemon.installPlan(context)
 
   /** Current LAN IPv4, preferring the wlan interface (computed fresh — DHCP-safe). */
   private fun currentIp(): String? =
@@ -538,19 +521,10 @@ class FleetRoutes(private val context: Context) {
 
     /** Derive the install-mode label reported in /info and gating /install. Pure. */
     internal fun modeFor(daemonAvailable: Boolean, paused: Boolean): String =
-        when {
-          daemonAvailable -> "silent"
-          paused -> "paused"
-          else -> "dialog"
-        }
+        InstallLifecycle.modeFor(daemonAvailable, paused)
 
     /** Map a store status string to a terminal result, or null for progress updates. Pure. */
-    internal fun terminalResult(msg: String): Boolean? =
-        when {
-          msg.contains("Installed ✓") -> true
-          msg.startsWith("Install failed") || msg.startsWith("Error") || msg.startsWith("Paused") -> false
-          else -> null
-        }
+    internal fun terminalResult(msg: String): Boolean? = InstallLifecycle.terminalResult(msg)
 
     /** Length-checked constant-time token compare. Pure. */
     internal fun constantTimeEquals(a: String, b: String): Boolean {

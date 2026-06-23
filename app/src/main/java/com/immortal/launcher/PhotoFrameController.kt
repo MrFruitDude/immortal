@@ -190,31 +190,26 @@ class PhotoFrameController(
 
   fun start() {
     settings = ScreensaverConfig.load(context)
-    // Web-page source takes over the whole frame — no photo feed, no Immortal overlay.
-    if (faceOverride == null && settings.usesWebUrl) {
-      startWebPage(settings.webUrl!!)
-      return
-    }
+    val source = PhotoFrameSource.from(settings, allowWebPage = faceOverride == null)
     applyFit()
     refreshCalendar.run()
     calendarTick.run()
     // Build + drive the overlay from the user's selected face ([FaceCatalog]); faceOverride lets
     // the debug preview harness (and the overnight night clock) render a specific face instead.
     faceRenderer.start(faceOverride ?: FaceCatalog.active(context))
-    when {
-      settings.usesFolder -> {
-        val path = settings.folderPath
-        if (path.isNullOrBlank()) {
-          startWeb()
-          return
-        }
+    when (source) {
+      is PhotoFrameSource.WebPage -> {
+        // Web-page source takes over the whole frame — no photo feed, no Immortal overlay.
+        startWebPage(source.url)
+      }
+      is PhotoFrameSource.Folder -> {
         io.execute {
           val list =
-              if (LocalMedia.isAccessible(path)) LocalMedia.enumerate(path, settings.includeVideo)
+              if (LocalMedia.isAccessible(source.path)) LocalMedia.enumerate(source.path, source.includeVideo)
               else emptyList()
           ui.post {
             if (list.isNotEmpty()) {
-              playlist = if (settings.shuffle) list.shuffled() else list
+              playlist = if (source.shuffle) list.shuffled() else list
               localMode = true
               localIndex = -1
               advanceLocal(+1)
@@ -225,19 +220,14 @@ class PhotoFrameController(
           }
         }
       }
-      settings.usesUrl -> {
-        val shareUrl = settings.albumUrl
-        if (shareUrl.isNullOrBlank()) {
-          startWeb()
-          return
-        }
+      is PhotoFrameSource.SharedAlbum -> {
         val m = context.resources.displayMetrics
         io.execute {
-          val album = RemoteAlbum.fetch(shareUrl, m.widthPixels, m.heightPixels)
+          val album = RemoteAlbum.fetch(source.url, m.widthPixels, m.heightPixels)
           val urls = album?.photoUrls.orEmpty()
           ui.post {
             if (urls.isNotEmpty()) {
-              remoteUrls = if (settings.shuffle) urls.shuffled() else urls
+              remoteUrls = if (source.shuffle) urls.shuffled() else urls
               remoteHeaders = emptyMap()
               remoteMode = true
               remoteIndex = -1
@@ -251,19 +241,13 @@ class PhotoFrameController(
           }
         }
       }
-      settings.usesImmich -> {
-        val base = settings.immichUrl
-        val key = settings.immichKey
-        if (base.isNullOrBlank() || key.isNullOrBlank()) {
-          startWeb()
-          return
-        }
+      is PhotoFrameSource.Immich -> {
         io.execute {
-          val urls = ImmichSource.listImageUrls(base, key, settings.immichAlbumId).orEmpty()
+          val urls = ImmichSource.listImageUrls(source.url, source.key, source.albumId).orEmpty()
           ui.post {
             if (urls.isNotEmpty()) {
-              remoteUrls = if (settings.shuffle) urls.shuffled() else urls
-              remoteHeaders = ImmichSource.authHeaders(key)
+              remoteUrls = if (source.shuffle) urls.shuffled() else urls
+              remoteHeaders = ImmichSource.authHeaders(source.key)
               remoteMode = true
               remoteIndex = -1
               remoteFailStreak = 0
@@ -275,18 +259,13 @@ class PhotoFrameController(
           }
         }
       }
-      settings.usesDav -> {
-        val url = settings.davUrl
-        if (url.isNullOrBlank()) {
-          startWeb()
-          return
-        }
+      is PhotoFrameSource.WebDav -> {
         io.execute {
-          val urls = DavSource.listImageUrls(url, settings.davUser, settings.davPass).orEmpty()
+          val urls = DavSource.listImageUrls(source.url, source.user, source.pass).orEmpty()
           ui.post {
             if (urls.isNotEmpty()) {
-              remoteUrls = if (settings.shuffle) urls.shuffled() else urls
-              remoteHeaders = DavSource.authHeaders(settings.davUser, settings.davPass)
+              remoteUrls = if (source.shuffle) urls.shuffled() else urls
+              remoteHeaders = DavSource.authHeaders(source.user, source.pass)
               remoteMode = true
               remoteIndex = -1
               remoteFailStreak = 0
@@ -297,21 +276,21 @@ class PhotoFrameController(
           }
         }
       }
-      settings.usesSmb -> {
+      is PhotoFrameSource.Smb -> {
         val src =
             SmbSource(
-                host = settings.smbHost.orEmpty(),
-                shareName = settings.smbShare.orEmpty(),
-                basePath = settings.smbPath.orEmpty(),
-                user = settings.smbUser.orEmpty(),
-                password = settings.smbPass.orEmpty(),
+                host = source.host,
+                shareName = source.share,
+                basePath = source.path,
+                user = source.user,
+                password = source.pass,
             )
         io.execute {
           val paths = if (src.connect()) src.listImages() else emptyList()
           ui.post {
             if (paths.isNotEmpty()) {
               smbSource = src
-              remoteUrls = if (settings.shuffle) paths.shuffled() else paths
+              remoteUrls = if (source.shuffle) paths.shuffled() else paths
               remoteFetch = { p -> src.openStream(p)?.use { BitmapFactory.decodeStream(it) } }
               remoteMode = true
               remoteIndex = -1
@@ -325,7 +304,7 @@ class PhotoFrameController(
           }
         }
       }
-      else -> startWeb()
+      PhotoFrameSource.DefaultFeed -> startWeb()
     }
   }
 
