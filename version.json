@@ -1,6 +1,6 @@
 {
-  "versionCode": 50,
-  "versionName": "1.49",
+  "versionCode": 51,
+  "versionName": "1.50",
   "apkUrl": "https://github.com/starbrightlab/immortal/releases/latest/download/immortal.apk",
-  "notes": "Fixes connecting Immortal to Music Assistant for multi-room audio:\n\n- Music Assistant's server port is now configurable, and defaults to 8095 (MA's standard port). Earlier builds assumed a different port, so a normal Music Assistant setup would report \"Can't reach Music Assistant\" even when everything else was correct.\n- Signing in is now optional. If your Music Assistant doesn't require a login, just enter the server address \u2014 no username or password needed. The Sign-in button now also doubles as a connection test, confirming the Portal can reach your server."
+  "notes": "Adds smart-home notifications and two reliability fixes:\n\n- New: show notifications on your Portal from Home Assistant or any MQTT source \u2014 a title, message, and an optional icon and sound, displayed on a configurable overlay. See the smart-home docs for the message format.\n- New: an MQTT command to bring up the photo-frame screensaver on demand.\n- Fix: the launcher no longer loses its default-home role after a photo-frame crash, so the Portal reliably returns to the Immortal home screen.\n- Fix: you can uninstall apps again from the launcher's edit mode \u2014 tap the pencil, then the red X on an app."
 }
