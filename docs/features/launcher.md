@@ -25,8 +25,8 @@ and is fully navigable by remote on the [Portal TV](portal-tv.md).
 - **App switcher** — a top-bar control (`AppSwitcherActivity`) that lists your recently-used
   apps so you can hop between them without returning to the grid.
 - **"hey" voice button** — an optional mic button for push-to-talk to your voice assistant. It
-  appears when the companion wake-word app is installed and is supported on **first-gen Portals
-  only** — see [Alexa & voice](../guides/voice-alexa.md).
+  appears only when the companion wake-word app is explicitly enabled and installed, and is
+  supported on **first-gen Portals only** — see [Alexa & voice](../guides/voice-alexa.md).
 
 ## Tiles
 

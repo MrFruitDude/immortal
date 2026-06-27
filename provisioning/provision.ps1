@@ -367,12 +367,14 @@ function Set-Screensaver {
 # ----- Alexa restore (the "hey" free tier) -----------------------------------
 # Mirrors provision.sh's restore_alexa: reconstruct our patched+signed falcon from
 # the PUBLIC stock APK via our binary diff, install it, apply the privileged grants,
-# then install the wake-word app. Optional, opt-in, NON-FATAL (a failure here never
-# aborts the rest of the provision - we Warn + return, never Die).
+# then optionally install the wake-word app. Optional, opt-in, NON-FATAL (a failure
+# here never aborts the rest of the provision - we Warn + return, never Die).
 #
 # WINDOWS CAVEAT: unlike macOS, Windows ships no `bspatch`. So either install one
 # and point BSPATCH_EXE at it, or set FALCON_PATCHED_LOCAL to a prebuilt APK. With
-# neither, the falcon step is skipped with guidance (the rest still runs).
+# neither, the falcon step is skipped with guidance (the rest still runs). The
+# wake-word app is separate and explicit opt-in because it keeps a background mic
+# listener that can interfere with Messenger calls on Gen-1 Portal+.
 function Get-Sha256($path) { (Get-FileHash -Algorithm SHA256 -Path $path).Hash.ToLower() }
 
 function Restore-Alexa {
@@ -475,19 +477,31 @@ function Restore-Alexa {
   Warn "If this Portal isn't linked yet, an Amazon sign-in is now on screen - go to amazon.com/code and enter the code shown (you can do this while the rest of setup runs)."
 
   # 4. millennium = the "hey" wake-word app (drives falcon hands-free).
+  # It keeps a background mic listener. Because that can interfere with Messenger
+  # calls on at least one Gen-1 Portal+, make it explicit opt-in and remove our
+  # previously installed copy when the option is off.
   $mp = if ($cfg["MILLENNIUM_PKG"]) { $cfg["MILLENNIUM_PKG"] } else { "com.millennium" }
-  $mapk = $null
-  if ($cfg["MILLENNIUM_APK_LOCAL"] -and (Test-Path $cfg["MILLENNIUM_APK_LOCAL"])) { $mapk = $cfg["MILLENNIUM_APK_LOCAL"] }
-  elseif ($cfg["MILLENNIUM_APK_URL"]) {
-    Step "Downloading the hey (millennium) app"
-    try { Invoke-WebRequest $cfg["MILLENNIUM_APK_URL"] -OutFile (Join-Path $work "millennium.apk"); $mapk = Join-Path $work "millennium.apk" }
-    catch { Warn "millennium download failed (Alexa text/voice still works; wake word needs it)" }
+  $installWake = $cfg["INSTALL_ALEXA_WAKE_WORD"] -eq "true"
+  if ($installWake) {
+    $mapk = $null
+    if ($cfg["MILLENNIUM_APK_LOCAL"] -and (Test-Path $cfg["MILLENNIUM_APK_LOCAL"])) { $mapk = $cfg["MILLENNIUM_APK_LOCAL"] }
+    elseif ($cfg["MILLENNIUM_APK_URL"]) {
+      Step "Downloading the hey (millennium) app"
+      try { Invoke-WebRequest $cfg["MILLENNIUM_APK_URL"] -OutFile (Join-Path $work "millennium.apk"); $mapk = Join-Path $work "millennium.apk" }
+      catch { Warn "millennium download failed (Alexa text/voice still works; wake word needs it)" }
+    }
+    if ($mapk -and (Test-Path $mapk)) {
+      Step "Installing hey (millennium)"
+      A install -r $mapk | Out-Null; Ok "millennium installed"
+    }
+    if ("$(A shell pm path $mp)".Trim()) { A shell pm grant $mp android.permission.RECORD_AUDIO | Out-Null }
+  } else {
+    Step "Skipping the hey (millennium) wake-word app"
+    if ("$(A shell pm path $mp)".Trim()) {
+      A uninstall $mp | Out-Null; Ok "millennium removed"
+    }
+    Warn "Wake word is off by default because its always-on mic can break Messenger call audio on Gen-1 Portal+ (#86). Set INSTALL_ALEXA_WAKE_WORD=true in config.env to opt in."
   }
-  if ($mapk -and (Test-Path $mapk)) {
-    Step "Installing hey (millennium)"
-    A install -r $mapk | Out-Null; Ok "millennium installed"
-  }
-  if ("$(A shell pm path $mp)".Trim()) { A shell pm grant $mp android.permission.RECORD_AUDIO | Out-Null }
 
   # 5. Wait for ReadyState - EVENT-DRIVEN, not on a timer. falcon logs `AccountRegisteredCondition:
   # isMet` the instant the Amazon account is linked, and never before, so it's a precise "sign-in just
@@ -513,8 +527,12 @@ function Restore-Alexa {
     Start-Sleep -Seconds 5
   }
   if ($ready) {
-    if ("$(A shell pm path $mp)".Trim()) { A shell am start -n "$mp/com.millennium.ui.HeyActivity" | Out-Null }
-    Ok "Alexa connected (ReadyState) - say 'Hey Alexa, what's the weather?'"
+    if ($installWake) {
+      if ("$(A shell pm path $mp)".Trim()) { A shell am start -n "$mp/com.millennium.ui.HeyActivity" | Out-Null }
+      Ok "Alexa connected (ReadyState) - say 'Hey Alexa, what's the weather?'"
+    } else {
+      Ok "Alexa connected (ReadyState); wake word left off for Messenger call compatibility"
+    }
     Write-Host "  Once linked, you can hide falcon's icon from the launcher - it runs headless." -ForegroundColor DarkGray
   } else {
     Warn "Alexa didn't connect within ~6 min. Check Wi-Fi + that the Amazon account is linked, then re-run with -Alexa."
@@ -534,7 +552,7 @@ function Maybe-Restore-Alexa {
     if ([Environment]::UserInteractive) {
       Write-Host ""
       Write-Host "Restore Amazon Alexa on this Portal?" -ForegroundColor White
-      Write-Host "  Revives the original Alexa app - hands-free 'Hey Alexa', with text, voice and visual answers."
+      Write-Host "  Revives the original Alexa app for text, voice and visual answers. Wake word is a separate opt-in."
       $ans = Read-Host "  [y/N]"
       $want = if ($ans -match '^[Yy]') { "true" } else { "false" }
     } else { $want = "false" }

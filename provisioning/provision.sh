@@ -19,8 +19,8 @@
 #                             for the laptop fleet tool (the persistent channel)
 #   ./provision.sh --wifi-adb on-demand raw adb-over-WiFi for shell/scrcpy (temp;
 #                             pauses Shizuku, resets on reboot)
-#   ./provision.sh --alexa    restore the original Amazon Alexa app (the "hey"
-#                             free tier): revive falcon + install the wake word
+#   ./provision.sh --alexa    restore the original Amazon Alexa app; the "hey"
+#                             wake word is a separate config opt-in
 
 set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -499,10 +499,10 @@ set_screensaver() {
 # Revives the original Amazon Alexa client ("falcon") on this locked, unrooted
 # Portal: reconstruct our patched+signed APK from the PUBLIC stock dump via our
 # binary diff (we never host Amazon's binary), install it, apply the privileged
-# grants, then install the "hey" wake-word app. Optional, opt-in, and NON-FATAL:
-# a failure here never aborts an otherwise-successful provision. Config in
-# config.env (ALEXA_* / FALCON_* / MILLENNIUM_*); local-path overrides let us
-# test against built artifacts before the hosted URLs exist.
+# grants, then optionally install the "hey" wake-word app. Optional, opt-in, and
+# NON-FATAL: a failure here never aborts an otherwise-successful provision.
+# Config in config.env (ALEXA_* / FALCON_* / MILLENNIUM_*); local-path overrides
+# let us test against built artifacts before the hosted URLs exist.
 sha256() {
   if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
   elif command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
@@ -597,7 +597,7 @@ restore_alexa() {
   ok "falcon provisioned"
 
   # 3b. Surface the Amazon sign-in NOW, right after install, so a fresh Portal shows the linking
-  #     code immediately and the user can complete registration WHILE we install the wake app and
+  #     code immediately and the user can complete registration while we finish the Alexa step and
   #     wait to connect — turning a fresh setup into a single pass. (Already-linked Portals just
   #     reconnect; this launch is harmless for them.) We clear logcat here so the ReadyState we
   #     watch for below is from this launch onward, not a stale entry from a prior run.
@@ -608,17 +608,29 @@ restore_alexa() {
   printf "  %sIf this Portal isn't linked yet, an Amazon sign-in is now on screen — go to amazon.com/code\n  and enter the code shown. You can do this while the rest of setup runs.%s\n" "$Y" "$N"
 
   # 4. millennium = the "hey" wake-word app (drives falcon hands-free).
+  # It keeps a background mic listener. Because that can interfere with Messenger
+  # calls on at least one Gen-1 Portal+, make it explicit opt-in and remove our
+  # previously installed copy when the option is off.
   local MP="${MILLENNIUM_PKG:-com.millennium}"
-  local mapk="${MILLENNIUM_APK_LOCAL:-}"
-  if [ -z "$mapk" ] && [ -n "${MILLENNIUM_APK_URL:-}" ]; then
-    step "Downloading the hey (millennium) app"
-    if curl -fSL --retry 2 -o "$work/millennium.apk" "$MILLENNIUM_APK_URL" 2>/dev/null; then mapk="$work/millennium.apk"; else warn "millennium download failed (Alexa text/voice still works; wake word needs it)"; fi
+  local install_wake="${INSTALL_ALEXA_WAKE_WORD:-false}"
+  if [ "$install_wake" = true ]; then
+    local mapk="${MILLENNIUM_APK_LOCAL:-}"
+    if [ -z "$mapk" ] && [ -n "${MILLENNIUM_APK_URL:-}" ]; then
+      step "Downloading the hey (millennium) app"
+      if curl -fSL --retry 2 -o "$work/millennium.apk" "$MILLENNIUM_APK_URL" 2>/dev/null; then mapk="$work/millennium.apk"; else warn "millennium download failed (Alexa text/voice still works; wake word needs it)"; fi
+    fi
+    if [ -n "$mapk" ] && [ -f "$mapk" ]; then
+      step "Installing hey (millennium)"
+      a install -r "$mapk" >/dev/null 2>&1 && ok "millennium installed" || warn "millennium install failed"
+    fi
+    a shell pm path "$MP" >/dev/null 2>&1 && a shell pm grant "$MP" android.permission.RECORD_AUDIO >/dev/null 2>&1
+  else
+    step "Skipping the hey (millennium) wake-word app"
+    if a shell pm path "$MP" >/dev/null 2>&1; then
+      a uninstall "$MP" >/dev/null 2>&1 && ok "millennium removed" || warn "Couldn't remove millennium"
+    fi
+    warn "Wake word is off by default because its always-on mic can break Messenger call audio on Gen-1 Portal+ (#86). Set INSTALL_ALEXA_WAKE_WORD=true in config.env to opt in."
   fi
-  if [ -n "$mapk" ] && [ -f "$mapk" ]; then
-    step "Installing hey (millennium)"
-    a install -r "$mapk" >/dev/null 2>&1 && ok "millennium installed" || warn "millennium install failed"
-  fi
-  a shell pm path "$MP" >/dev/null 2>&1 && a shell pm grant "$MP" android.permission.RECORD_AUDIO >/dev/null 2>&1
 
   # 5. Wait for ReadyState — EVENT-DRIVEN, not on a timer. falcon is already on screen (3b).
   #
@@ -648,8 +660,12 @@ restore_alexa() {
     sleep 5; i=$((i + 1))
   done
   if [ "$ready" = 1 ]; then
-    a shell pm path "$MP" >/dev/null 2>&1 && a shell am start -n "$MP/com.millennium.ui.HeyActivity" >/dev/null 2>&1
-    ok "Alexa connected (ReadyState) — say \"Hey Alexa, what's the weather?\""
+    if [ "$install_wake" = true ]; then
+      a shell pm path "$MP" >/dev/null 2>&1 && a shell am start -n "$MP/com.millennium.ui.HeyActivity" >/dev/null 2>&1
+      ok "Alexa connected (ReadyState) — say \"Hey Alexa, what's the weather?\""
+    else
+      ok "Alexa connected (ReadyState); wake word left off for Messenger call compatibility"
+    fi
     printf "  %sOnce linked, you can hide falcon's icon from the launcher — it runs headless.%s\n" "$D" "$N"
   else
     warn "Alexa didn't connect within ~6 min. Check Wi-Fi + that the Amazon account is linked, then re-run './provision.sh --alexa'."
@@ -670,7 +686,7 @@ maybe_restore_alexa() {
   if [ -z "$want" ]; then
     if [ -t 0 ]; then
       printf "\n%sRestore Amazon Alexa on this Portal?%s Revives the original Alexa app —\n" "$B" "$N"
-      printf "  hands-free \"Hey Alexa\", with text, voice and visual answers. %s[y/N]%s " "$B" "$N"
+      printf "  text, voice and visual answers. Wake word is a separate opt-in. %s[y/N]%s " "$B" "$N"
       local ans; read -r ans || ans=""
       case "$ans" in [Yy]*) want=true ;; *) want=false ;; esac
     else

@@ -122,7 +122,7 @@ Enter):
 | Prompt | What it means | Suggested answer |
 | --- | --- | --- |
 | **Block Meta OS updates?** | Stops a future Meta update from silently undoing your setup. The Portal is discontinued, so you give up only unlikely future patches. | **Yes** (default) |
-| **Restore Amazon Alexa?** *(first-gen only)* | Revives hands-free "Hey Alexa." See the [Alexa & voice guide](guides/voice-alexa.md). | Your call — `y` to set it up |
+| **Restore Amazon Alexa?** *(first-gen only)* | Revives the original Alexa client. The always-on "Hey Alexa" wake word is a separate opt-in because it can interfere with Messenger call audio on some Gen-1 hardware. See the [Alexa & voice guide](guides/voice-alexa.md). | Your call — `y` to set up Alexa |
 | **Device name** *(only with `--fleet`)* | A friendly name for [fleet management](features/fleet.md), e.g. "Living Room". | Whatever you like |
 
 If you don't want to be asked at all, you can preset these in `config.env` (see

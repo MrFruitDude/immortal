@@ -1,8 +1,8 @@
 # Alexa & voice (first-gen Portals)
 
-Immortal can revive the Portal's original on-device **Amazon Alexa** client so it does hands-free
-**"Hey Alexa"** again — text, voice, and visual answers — and adds a **"hey" button** in the home
-header for push-to-talk.
+Immortal can revive the Portal's original on-device **Amazon Alexa** client for text, voice, and
+visual answers. The always-listening **"Hey Alexa"** wake-word helper is available as a separate
+opt-in because it can keep the microphone busy during Messenger calls on some Gen-1 hardware.
 
 !!! danger "First-gen (Android 9) Portals only"
     Alexa revival and the wake word are supported on **first-gen Portals (Android 9)** — the
@@ -16,11 +16,12 @@ header for push-to-talk.
 
 ## How it works (and why it's allowed)
 
-Two pieces work together:
+Alexa support has two pieces:
 
 - **falcon** — the Portal's original Amazon Alexa client (`com.amazon.alexa.multimodal.falcon`),
   revived so it runs again on the locked, unrooted device.
-- **"hey" (Millennium)** — a small wake-word app that drives falcon hands-free.
+- **"hey" (Millennium)** — an optional wake-word app that drives falcon hands-free and adds the
+  launcher mic button.
 
 Immortal **never hosts Amazon's binary.** The provisioning kit either downloads a
 **patched-and-signed** falcon build, or reconstructs it on your machine from the **public Portal
@@ -45,11 +46,18 @@ The kit then:
 2. **Opens Alexa to link your Amazon account.** A sign-in code appears on the Portal — go to
    [amazon.com/code](https://www.amazon.com/code) and enter it. You can do this while the rest of
    setup runs.
-3. **Installs the "hey" (Millennium) wake-word app** and grants it the microphone.
-4. **Waits for Alexa to connect** (it watches for the device reaching its ready state). When it's
-   done, try: *"Hey Alexa, what's the weather?"*
+3. **Skips the "hey" (Millennium) wake-word app by default** so Messenger calls keep exclusive
+   access to clean microphone audio.
+4. **Waits for Alexa to connect** (it watches for the device reaching its ready state).
 
 Once linked, you can hide falcon's icon from the launcher — it runs headless.
+
+!!! warning "Wake word is explicit opt-in"
+    Set `INSTALL_ALEXA_WAKE_WORD=true` in `provisioning/config.env`, then re-run
+    `./provision.sh --alexa`, to install the Millennium wake-word app and show the launcher mic
+    button. This restores hands-free "Hey Alexa", but on at least one Gen-1 Portal+ it caused
+    Facebook Messenger call microphone audio to cut in and out. Leave it off if Messenger calling
+    matters on that device.
 
 !!! warning "Windows: the reconstruct path needs bspatch"
     macOS and Linux ship (or can install) `bspatch`. Windows doesn't, so on Windows use the hosted
@@ -57,7 +65,8 @@ Once linked, you can hide falcon's icon from the launcher — it runs headless.
 
 ## Using the "hey" button
 
-When the Millennium app is installed, a **"hey" mic button** appears in the home header:
+When `INSTALL_ALEXA_WAKE_WORD=true` and the Millennium app is installed, a **"hey" mic button**
+appears in the home header:
 
 - **Tap** — push-to-talk: wakes your assistant without saying the wake word.
 - **Long-press** — pick *which* assistant to talk to (the chooser is provided by Millennium;
@@ -67,7 +76,9 @@ The trigger is guarded so only the launcher itself can fire it, not other apps o
 
 ## Removing it
 
-`./provision.sh --restore` removes **only** the "hey" wake-word app.
+`./provision.sh --restore` removes **only** the "hey" wake-word app. Running
+`./provision.sh --alexa` with the default `INSTALL_ALEXA_WAKE_WORD=false` also removes Millennium
+if an older setup installed it.
 
 !!! warning "falcon is left installed on purpose"
     Uninstalling falcon drops its Amazon registration and would mint a **new ghost device** with
@@ -82,5 +93,8 @@ The trigger is guarded so only the launcher itself can fire it, not other apps o
   linking at [amazon.com/code](https://www.amazon.com/code), then re-run `./provision.sh --alexa`.
 - **Duplicate-permission conflict with `com.amazon.dee.app`** — the standalone Amazon Alexa app
   conflicts with falcon's permissions; a coexistence build is needed, so remove that app or skip it.
-- **Wake word never triggers** — the "hey" (Millennium) app must be installed and hold the
-  microphone permission; re-run the Alexa step to reinstall it.
+- **Wake word never triggers** — set `INSTALL_ALEXA_WAKE_WORD=true` in `config.env`, then re-run
+  the Alexa step so the "hey" (Millennium) app is installed and holds the microphone permission.
+- **Messenger calls sound broken after enabling wake word** — turn the wake word back off by
+  setting `INSTALL_ALEXA_WAKE_WORD=false` and re-running `./provision.sh --alexa`, or run
+  `./provision.sh --restore`.

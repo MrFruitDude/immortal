@@ -48,6 +48,7 @@ installs → freeze OS updates → set launcher → set screensaver. Each step i
 | `PREINSTALL_FDROID`, `PREINSTALL_APKS` | Apps to pre-install during setup (see below) |
 | `APK_GLOB` | Which APK to install (drop yours in `apks/`) |
 | `ASSET_DIR` | Photos pushed to the frame (first becomes `frame.jpg`) |
+| `RESTORE_ALEXA`, `INSTALL_ALEXA_WAKE_WORD` | First-gen Alexa restore and the separate opt-in wake-word helper |
 
 To ship your own app instead of the sample, replace `apks/app-debug.apk`, drop photos in
 `assets/`, and update `PKG`/`HOME_ACTIVITY`/`DREAM_SERVICE` in `config.env`.
