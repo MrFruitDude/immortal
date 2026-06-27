@@ -13,6 +13,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.util.Log
 import java.util.Calendar
 
@@ -115,13 +116,11 @@ object SleepScheduler {
    */
   fun onReturnedToLauncher(context: Context) {
     cancelIdle(context)
-    main.removeCallbacks(nightSessionElapsed)
     if (isOvernightNow(context)) {
-      nightSessionCtx = context.applicationContext
-      nightSessionActive = true
-      main.postDelayed(nightSessionElapsed, overnightSessionMs(context))
+      startNightSession(context)
     } else {
       nightSessionActive = false
+      main.removeCallbacks(nightSessionElapsed)
     }
   }
 
@@ -149,6 +148,13 @@ object SleepScheduler {
   private fun overnightSessionMs(context: Context): Long {
     val cfg = ScreensaverConfig.load(context)
     return if (cfg.idleSleepOn) cfg.idleSleepMin * 60_000L else OVERNIGHT_SESSION_DEFAULT_MS
+  }
+
+  private fun startNightSession(context: Context) {
+    main.removeCallbacks(nightSessionElapsed)
+    nightSessionCtx = context.applicationContext
+    nightSessionActive = true
+    main.postDelayed(nightSessionElapsed, overnightSessionMs(context))
   }
 
   // ----- overnight window ----------------------------------------------------
@@ -194,6 +200,22 @@ object SleepScheduler {
         else -> OvernightRedream.REBLANK
       }
 
+  internal enum class OvernightApply {
+    /** Outside the overnight window: scheduling is enough. */
+    LEAVE,
+    /** Inside the window and already interactive: give the user a renewable session. */
+    START_SESSION,
+    /** Inside the window with no active user: enter the dark/clock rest state now. */
+    REST,
+  }
+
+  internal fun classifyOvernightApply(inWindow: Boolean, interactive: Boolean): OvernightApply =
+      when {
+        !inWindow -> OvernightApply.LEAVE
+        interactive -> OvernightApply.START_SESSION
+        else -> OvernightApply.REST
+      }
+
   /**
    * Called from [DreamPolicy.onDreamingStopped] before it would relaunch the photo frame. Returns
    * true if the overnight window owns the screen and the caller must NOT relaunch (we either left a
@@ -236,7 +258,14 @@ object SleepScheduler {
   /** Apply the right state immediately (on boot, app start, or a settings change). */
   fun applyOvernightNow(context: Context) {
     scheduleOvernight(context)
-    if (isOvernightNow(context)) enterOvernightRest(context)
+    when (classifyOvernightApply(inWindow = isOvernightNow(context), interactive = isInteractive(context))) {
+      OvernightApply.LEAVE -> Unit
+      OvernightApply.START_SESSION -> {
+        SettingsGuard.reaffirmScreensaver(context)
+        startNightSession(context)
+      }
+      OvernightApply.REST -> enterOvernightRest(context)
+    }
   }
 
   /** The window-start alarm fired: enter the rest state and arm tomorrow's alarms. */
@@ -282,6 +311,9 @@ object SleepScheduler {
     val c = Calendar.getInstance()
     return c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE)
   }
+
+  private fun isInteractive(context: Context): Boolean =
+      context.getSystemService(PowerManager::class.java)?.isInteractive == true
 
   private fun nextOccurrence(minuteOfDay: Int): Long {
     val c = Calendar.getInstance()

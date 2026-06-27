@@ -57,6 +57,33 @@ class SleepSchedulerTest {
             inWindow = true, nightSessionActive = false, nightClock = true))
   }
 
+  // ----- immediate overnight application (issue #73 intentional wake) -----
+
+  @Test
+  fun apply_outsideWindow_leavesScreenAlone() {
+    assertEquals(
+        SleepScheduler.OvernightApply.LEAVE,
+        SleepScheduler.classifyOvernightApply(inWindow = false, interactive = false))
+    assertEquals(
+        SleepScheduler.OvernightApply.LEAVE,
+        SleepScheduler.classifyOvernightApply(inWindow = false, interactive = true))
+  }
+
+  @Test
+  fun apply_insideWindowWhileInteractive_startsUserSession() {
+    // If app startup/settings refresh runs after a deliberate wake, don't instantly re-lock.
+    assertEquals(
+        SleepScheduler.OvernightApply.START_SESSION,
+        SleepScheduler.classifyOvernightApply(inWindow = true, interactive = true))
+  }
+
+  @Test
+  fun apply_insideWindowWhileNotInteractive_entersRest() {
+    assertEquals(
+        SleepScheduler.OvernightApply.REST,
+        SleepScheduler.classifyOvernightApply(inWindow = true, interactive = false))
+  }
+
   @Test
   fun window_wrappingMidnight_includesLateNightAndEarlyMorning() {
     val start = 22 * 60 // 22:00
