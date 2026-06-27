@@ -49,6 +49,18 @@ object HomeGrid {
   }
 
   /**
+   * Normalize only once the caller has loaded dynamic launcher tiles. Before that, [keys] contains
+   * only built-ins/widgets, so reconciling would treat persisted app/folder slots as stale and
+   * overwrite the user's custom layout.
+   */
+  fun normalizeSlotsWhenReady(
+      saved: List<String?>,
+      keys: List<String>,
+      cols: Int,
+      dynamicTilesLoaded: Boolean,
+  ): List<String?> = if (dynamicTilesLoaded) normalizeSlots(saved, keys, cols) else saved
+
+  /**
    * Like [normalizeSlots] but page-aware: pads to whole [pageCapacity] pages, **auto-deletes any
    * fully-empty page**, and (when [keepSpare]) appends one trailing empty page so the user can drag
    * onto a fresh page. In-page blanks (gaps inside a page that still has tiles) are preserved.
@@ -73,6 +85,19 @@ object HomeGrid {
     if (keepSpare || out.isEmpty()) repeat(pageCapacity) { out.add(null) }
     return out
   }
+
+  /**
+   * Page-aware variant of [normalizeSlotsWhenReady]. Used by the launcher once page capacity is
+   * known; it must obey the same dynamic-load gate before persisting reconciled slots.
+   */
+  fun normalizeToPagesWhenReady(
+      saved: List<String?>,
+      keys: List<String>,
+      pageCapacity: Int,
+      keepSpare: Boolean = true,
+      dynamicTilesLoaded: Boolean,
+  ): List<String?> =
+      if (dynamicTilesLoaded) normalizeToPages(saved, keys, pageCapacity, keepSpare) else saved
 
   /** Swap the contents of two slots (either may be blank). Out-of-range/no-op returns the input. */
   fun swap(slots: List<String?>, a: Int, b: Int): List<String?> {

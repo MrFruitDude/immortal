@@ -375,10 +375,12 @@ private fun LauncherScreen(
     else @Suppress("UnspecifiedRegisterReceiverFlag") context.registerReceiver(receiver, filter)
     onDispose { runCatching { context.unregisterReceiver(receiver) } }
   }
-  val apps by
-      produceState(initialValue = emptyList<AppEntry>(), reload) {
+  val loadedApps by
+      produceState<List<AppEntry>?>(initialValue = null, reload) {
         value = withContext(Dispatchers.IO) { loadApps(context) }
       }
+  val appsLoaded = loadedApps != null
+  val apps = loadedApps.orEmpty()
   var editMode by remember { mutableStateOf(false) }
   var openFolder by remember { mutableStateOf<String?>(null) }
   var showWidgetPicker by remember { mutableStateOf(false) }
@@ -580,8 +582,8 @@ private fun LauncherScreen(
   // curated defaults: a user override wins over Curation.folderFor(). An empty
   // string is an explicit "ungrouped" override (used when dragging out of a
   // folder), so it beats a curated default too.
-  val assignments = remember { mutableStateMapOf<String, String>() }
-  LaunchedEffect(Unit) { assignments.putAll(UserLayout.load(context)) }
+  val assignments =
+      remember { mutableStateMapOf<String, String>().apply { putAll(UserLayout.load(context)) } }
   val appsEff =
       remember(apps, assignments.toMap()) {
         val effective = HomeLayoutModel.effectiveApps(apps.toLayoutRefs(), assignments)
@@ -608,8 +610,10 @@ private fun LauncherScreen(
   var gridSlots by remember { mutableStateOf(UserLayout.loadGridSlots(context)) }
   val gridColumns = gridColumnsFor(tileSize)
   // Keep the saved slot list in step with what's actually present, preserving the user's blanks.
-  LaunchedEffect(allTileKeys, gridColumns) {
-    val normalized = HomeGrid.normalizeSlots(gridSlots, allTileKeys, gridColumns)
+  LaunchedEffect(allTileKeys, gridColumns, appsLoaded) {
+    val normalized =
+        HomeGrid.normalizeSlotsWhenReady(
+            gridSlots, allTileKeys, gridColumns, dynamicTilesLoaded = appsLoaded)
     if (normalized != gridSlots) {
       gridSlots = normalized
       UserLayout.saveGridSlots(context, normalized)
@@ -887,10 +891,16 @@ private fun LauncherScreen(
           val rows = ((avail.value + 20f) / (rowH.value + 20f)).toInt().coerceAtLeast(1)
           val cap = (gridColumns * rows).coerceAtLeast(1)
           LaunchedEffect(cap) { pageCapacity = cap }
-          LaunchedEffect(allTileKeys, cap, dragKey != null) {
+          LaunchedEffect(allTileKeys, cap, dragKey != null, appsLoaded) {
             // Keep a spare empty page only while arranging; otherwise empty pages are removed.
             val normalized =
-                HomeGrid.normalizeToPages(gridSlots, allTileKeys, cap, keepSpare = dragKey != null)
+                HomeGrid.normalizeToPagesWhenReady(
+                    gridSlots,
+                    allTileKeys,
+                    cap,
+                    keepSpare = dragKey != null,
+                    dynamicTilesLoaded = appsLoaded,
+                )
             if (normalized != gridSlots) {
               gridSlots = normalized
               UserLayout.saveGridSlots(context, normalized)

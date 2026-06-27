@@ -31,6 +31,23 @@ class HomeGridTest {
   }
 
   @Test
+  fun normalizeWhenReady_keepsSavedSlotsUntilDynamicTilesLoad() {
+    val saved = listOf<String?>("builtin:calls", "app:custom", "folder:Family")
+    val partialKeys = listOf("builtin:calls", "builtin:store")
+
+    assertEquals(
+        saved,
+        HomeGrid.normalizeSlotsWhenReady(
+            saved, partialKeys, cols = 3, dynamicTilesLoaded = false),
+    )
+    assertEquals(
+        listOf("builtin:calls", null, null, "builtin:store", null, null, null, null, null),
+        HomeGrid.normalizeSlotsWhenReady(
+            saved, partialKeys, cols = 3, dynamicTilesLoaded = true),
+    )
+  }
+
+  @Test
   fun swap_exchangesTwoSlots_includingBlanks() {
     val slots = listOf<String?>("a", null, "b")
     assertEquals(listOf<String?>(null, "a", "b"), HomeGrid.swap(slots, 0, 1))
@@ -65,6 +82,32 @@ class HomeGridTest {
     assertEquals(
         listOf("a", "b", "c", "d"),
         HomeGrid.normalizeToPages(saved, listOf("a", "b", "c", "d"), 2, keepSpare = false),
+    )
+  }
+
+  @Test
+  fun normalizeToPagesWhenReady_keepsSavedSlotsUntilDynamicTilesLoad() {
+    val saved = listOf<String?>("app:a", "app:b", null, "folder:Media")
+
+    assertEquals(
+        saved,
+        HomeGrid.normalizeToPagesWhenReady(
+            saved,
+            keys = listOf("builtin:calls"),
+            pageCapacity = 4,
+            keepSpare = false,
+            dynamicTilesLoaded = false,
+        ),
+    )
+    assertEquals(
+        listOf(null, null, null, "folder:Media"),
+        HomeGrid.normalizeToPagesWhenReady(
+            saved,
+            keys = listOf("folder:Media"),
+            pageCapacity = 4,
+            keepSpare = false,
+            dynamicTilesLoaded = true,
+        ),
     )
   }
 }
