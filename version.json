@@ -1,6 +1,6 @@
 {
-  "versionCode": 60,
-  "versionName": "1.66",
+  "versionCode": 61,
+  "versionName": "1.67",
   "apkUrl": "https://github.com/starbrightlab/immortal/releases/latest/download/immortal.apk",
-  "notes": "The photo-feed picker now works: choose the Met Museum, Art Institute of Chicago, Wikimedia landscapes, or NASA's Astronomy Picture of the Day and that is what you get. Adds Synology Photos shared albums as a screensaver source. Home Assistant gains media volume and mute controls over MQTT. Shared-album loading is more resilient: a mid-fetch failure now shows the photos already loaded instead of falling back to the built-in feed."
+  "notes": "Pick your weather location: search for your city under Settings > Weather location, or re-detect automatically - fixes wrong-city weather, sunrise times, and ISS passes. Fill mode fills again: portrait photos crop to full screen when fill is selected, on landscape and portrait-mounted Portals alike. Large shared albums (100+ photos) now load reliably - Apple's servers just needed more patience than we gave them. The Android Recents button only appears with the system bar now and gained an off switch. Home Assistant: microphone mute stays in sync, and the inaudible volume controls are hidden on Portal TV."
 }
