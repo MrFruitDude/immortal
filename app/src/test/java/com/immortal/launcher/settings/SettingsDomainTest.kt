@@ -365,7 +365,9 @@ class SettingsDomainTest {
             "useTls",
             "validateCert",
             "ambientSensors",
-            "tempOffset"),
+            "tempOffset",
+            "cameraEnabled",
+            "cameraAudio"),
         SettingsDomains.mqtt.specs.map { it.key }.toSet())
   }
 

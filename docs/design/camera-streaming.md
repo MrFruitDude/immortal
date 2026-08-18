@@ -4,7 +4,7 @@ Expose a Portal's camera to Home Assistant as a live stream, with **optional aud
 Portal in a nursery or hallway can double as a nanny/security camera. LAN only, off by default,
 and unmistakable when it's live.
 
-**Status:** phase 1 (snapshots) implemented; phases 2-4 not started. This records the decisions,
+**Status:** phases 1-3 implemented (snapshots, live video, audio); phase 4 (motion) not started. This records the decisions,
 the parts we already have, the parts that are genuinely hard, and what has to be answered on real
 hardware before writing much code.
 
@@ -81,7 +81,7 @@ for wave-to-advance during the photo frame. Streaming and gesture-wave must be *
 exclusive**, with one owner arbitrating and the stream recovering after a call releases the
 device.
 
-**4. Microphone contention — currently unmanaged.** `LanAudio` (intercom) and `AudioNote` both
+**4. Microphone contention — was unmanaged; now brokered through `MicOwner`.** `LanAudio` (intercom) and `AudioNote` both
 open `AudioSource.MIC` today with **no arbitration between them at all**. Audio streaming would
 be a third consumer, and the failure is silent: whoever asks second gets nothing useful. This
 needs a single mic broker with an explicit priority — a live intercom announcement should win,
@@ -91,7 +91,7 @@ On Portal+ there is a further constraint: Meta's own far-field mic service (`com
 can hold the microphone, which is why the bridge ships a `--free-mic` provisioning flag. Expect
 audio to be unavailable on some models until that's disabled, and detect it rather than assume.
 
-**5. Mic mute has to gate audio.** Immortal publishes a `mic_mute` switch to Home Assistant. A
+**5. Mic mute has to gate audio — done, and unit-tested.** Immortal publishes a `mic_mute` switch to Home Assistant. A
 stream that keeps sending audio while HA says the microphone is muted is both a contradiction
 and a genuine privacy surprise. **When `isMicrophoneMute` is true the audio track must be
 silent.** That rule is pure logic and should be unit-tested, not left to integration behaviour.
@@ -147,8 +147,22 @@ Deliberately ordered so each phase is useful alone and de-risks the next.
     story at all, rides the broker we already treat as trusted, and doesn't require the opt-in
     fleet agent to be running. Images are published **unretained**, so a still of someone's room
     doesn't sit on the broker for whoever subscribes next.
-2. **Video streaming.** RTSP + `MediaCodec` H.264, no audio. The encoder work.
-3. **Audio.** AAC track, the mic broker, and the mute gating.
+2. **Video streaming** — *implemented*. RTSP + `MediaCodec` H.264, no audio yet.
+
+    RTP is **interleaved over the RTSP TCP connection** rather than sent on separate UDP ports.
+    One socket, no port negotiation, nothing to explain to a firewall on a home LAN, and no loss
+    to conceal — at the cost of head-of-line blocking, a fair trade for a fixed indoor scene at
+    15fps. The parts where a mistake is invisible rather than loud — RTP packetisation, FU-A
+    fragmentation, the SDP — are pure and unit-tested (`RtpH264`, `RtspSdp`); the Camera2 and
+    `MediaCodec` plumbing around them is not, and needs a device.
+3. **Audio** — *implemented*. An AAC-LC track alongside the video, its own RTP clock and
+   control URL, so a viewer that only wants a picture sets up one track and not the other.
+
+    Both hazards named above are addressed. [`MicOwner`] arbitrates the microphone by priority,
+    and the intercom and voice notes now go through it too — closing the pre-existing gap where
+    nothing arbitrated at all and whoever asked second silently got nothing. Muting the
+    microphone stops audio leaving the device rather than merely lowering it, which is the only
+    reading of the `mic_mute` switch that isn't a lie.
 4. **Motion** (optional). `binary_sensor` from the existing frame-diff, with a sensitivity
    number entity.
 
@@ -156,12 +170,16 @@ Deliberately ordered so each phase is useful alone and de-risks the next.
 
 None of these are answerable from the source, and all of them can invalidate parts of the plan:
 
-- What resolutions does Camera2 actually offer per model, and is `GestureCamera` even working
-  today at 320×240? (It has never been verified.)
+- ~~Does Camera2 work unprivileged on a Portal at all?~~ **Yes** — confirmed on hardware in
+  phase 1: real capture, real JPEG, camera indicator lit. This was the question the whole design
+  hung on.
+- What resolutions does Camera2 actually offer per model, for stills and for an encoder surface?
 - Does Portal firmware permit camera access from a background service, or only in the
   foreground? The bridge needed `SYSTEM_ALERT_WINDOW` for this, which we already hold.
 - Is there a usable hardware `MediaCodec` H.264 encoder on API 28 Portal, and does it offer
-  Constrained Baseline?
+  Constrained Baseline? (The encoder asks for it; the SDP reports what the SPS actually says, so
+  a device that ignores the request describes itself honestly rather than silently failing in a
+  browser.)
 - Does `com.millennium` block microphone capture on the Portal+ models, and on which?
 - Thermal behaviour of a sustained encode — the device is fanless and often wall-powered in a
   warm room.

@@ -76,7 +76,7 @@ automation is actually waiting for.
 
 A Portal can hand Home Assistant a still photo from its own camera — a second angle on a room
 you already have a Portal in. It is **off by default**, and the switch is deliberately on the
-device only: turn it on under **Settings → Immortal → Camera snapshots**. Nothing arriving over
+device only: turn it on under **Settings → Home Assistant (MQTT) → Camera snapshots**. Nothing arriving over
 MQTT can enable it, and while it is off the camera is never opened.
 
 Once on, two entities appear: a **Camera** entity showing the most recent still, and a **Take
@@ -88,15 +88,52 @@ never be photographed without the device saying so.
 
 Some things worth knowing before relying on it:
 
-- **It is stills, not video.** Live streaming with optional audio is designed but not built —
-  see [the design note](../design/camera-streaming.md).
+- **Stills, live video, and optional sound** — see [live streaming](#live-camera-streaming).
 - **The image is not retained on the broker.** Home Assistant shows the last one it received;
   a subscriber joining later sees nothing until the next snapshot.
 - **The camera is shared.** A Portal call takes it, and the photo frame's wave-to-advance
   gesture wants it too, so an occasional snapshot can come back empty rather than queueing.
+- **The image has to fit your broker's message size limit.** Snapshots are captured small on
+  purpose (640px, moderate JPEG quality), which keeps them well inside a typical limit. If your
+  broker still refuses one, the Portal says *snapshot too large for the broker* on screen rather
+  than sending it — an oversize publish costs the whole MQTT connection, not just the image.
+  Mosquitto's limit is `message_size_limit`.
 - **Anyone with broker credentials can press the button.** The same trust assumption as
   [notifications](#notifications) — but with a camera on the other end of it, so treat broker
   access accordingly.
+
+## Live camera streaming
+
+With the camera switched on, Home Assistant also gains a **Camera streaming** switch. Turn it on
+and the Portal serves live H.264 video over RTSP; a **Stream URL** diagnostic sensor tells you
+where, typically `rtsp://<portal-ip>:8554/`.
+
+It plays directly in VLC. For a Home Assistant dashboard, feed it through go2rtc — the
+**WebRTC Camera** card is the usual route:
+
+```yaml
+type: custom:webrtc-camera
+url: 'rtsp://<portal-ip>:8554/'
+```
+
+Points worth knowing:
+
+- **Sound is optional and separate.** Turn on **Camera sound** (the Home Assistant switch, or
+  Settings → Home Assistant (MQTT)) and the stream carries audio as well. It's off by default,
+  and a viewer that only wants a picture can take the video track alone.
+- **Muting the microphone silences the stream.** Not quietened — no audio leaves the device at
+  all while the `Microphone mute` switch is on. That switch is the truth.
+- **Someone talking takes the microphone back.** A live [intercom](tools.md) announcement, or
+  recording a voice note, outranks a background stream: the sound drops out for the duration and
+  the video carries on.
+- **Streaming does not survive a reboot.** The camera *permission* persists, the live stream
+  doesn't — a Portal that loses power comes back idle rather than quietly broadcasting a room.
+- **Home Assistant can start the stream, but never enable the camera.** The switch only works
+  within the consent given on the device.
+- **While it runs, the camera is held.** Snapshots, the photo frame's wave-to-advance gesture and
+  a Portal call all want the same camera, so they can't overlap with streaming.
+- **The notification is deliberate.** A permanent one shows while the camera is live — a
+  system-level signal alongside the on-screen one.
 
 ## What it can control
 

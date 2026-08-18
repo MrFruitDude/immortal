@@ -144,6 +144,7 @@ class MqttPublisher(private val appContext: Context) {
                 publishDiscovery(c)
                 publishPresence(PresenceHub.current)
                 publishAudioState()
+                publishStreamState()
               }
               .onFailure { Log.w(TAG, "reconfigure failed", it) }
         }
@@ -204,6 +205,7 @@ class MqttPublisher(private val appContext: Context) {
                     // move these without telling us, so HA's slider and switches would sit on
                     // whatever we last published until the next reconnect.
                     runCatching { publishAudioState() }
+                    runCatching { publishStreamState() }
                   }
                 }
               }
@@ -290,6 +292,7 @@ class MqttPublisher(private val appContext: Context) {
     publishScreen()
     publishIp()
     publishAudioState()
+    publishStreamState()
     if (MqttConfig.ambientSensors(appContext)) ambient.start()
   }
 
@@ -374,10 +377,20 @@ class MqttPublisher(private val appContext: Context) {
             Thread {
                   runCatching {
                         val jpeg = camera.snapshot()
-                        if (jpeg == null) Log.i(TAG, "snapshot unavailable")
-                        // retain = false on purpose: a still of someone's room should not sit on
-                        // the broker indefinitely for anyone who later subscribes.
-                        else client?.publish("$base/camera/image", jpeg, retain = false)
+                        when {
+                          jpeg == null -> Log.i(TAG, "snapshot unavailable")
+                          // A broker with a message size limit doesn't reject an oversize
+                          // PUBLISH, it drops the CONNECTION — taking presence, sensors and
+                          // everything else down with it, once per press. Never hand it one:
+                          // say so on the device instead, where the user can act on it.
+                          jpeg.size > MAX_IMAGE_BYTES -> {
+                            Log.w(TAG, "snapshot ${jpeg.size} bytes exceeds $MAX_IMAGE_BYTES; not publishing")
+                            camera.toast("Immortal · snapshot too large for the broker")
+                          }
+                          // retain = false on purpose: a still of someone's room should not sit on
+                          // the broker indefinitely for anyone who later subscribes.
+                          else -> client?.publish("$base/camera/image", jpeg, retain = false)
+                        }
                       }
                       .onFailure { Log.w(TAG, "snapshot failed", it) }
                 }
@@ -386,6 +399,24 @@ class MqttPublisher(private val appContext: Context) {
                   name = "mqtt-snapshot"
                   start()
                 }
+          }
+          // Streaming can only be switched on within consent already given on the device;
+          // CameraStreamService.sync enforces that, and we report back what actually happened
+          // rather than what was asked for.
+          "camera_stream" -> {
+            CameraStreamService.sync(appContext, payload.trim().equals("ON", ignoreCase = true))
+            publishStreamState()
+          }
+          "camera_audio" -> {
+            val on = payload.trim().equals("ON", ignoreCase = true)
+            ImmortalSettings.setCameraAudio(appContext, on)
+            // Audio is set up when the stream starts, so a change mid-stream needs a restart to
+            // take effect — the SDP has to describe the track for a client to ask for it.
+            if (CameraStreamService.running) {
+              CameraStreamService.sync(appContext, false)
+              CameraStreamService.sync(appContext, true)
+            }
+            publishStreamState()
           }
           "notify" -> handleNotify(payload)
           // Show the photo frame on demand — the same surface the launcher's header
@@ -561,6 +592,27 @@ class MqttPublisher(private val appContext: Context) {
     c.publish("$base/charging/state", if (charging) "ON" else "OFF", retain = true)
   }
 
+  /**
+   * Whether the stream is live, and where to point a player at it. Reported from the service's
+   * own state, so a stream that refused to start (no permission, camera busy) shows as off
+   * rather than leaving the switch stuck on.
+   */
+  private fun publishStreamState() {
+    val c = client ?: return
+    if (!ImmortalSettings.cameraEnabled(appContext)) return
+    c.publish("$base/camera_stream/state", if (CameraStreamService.running) "ON" else "OFF", retain = true)
+    c.publish(
+        "$base/camera_audio/state",
+        if (ImmortalSettings.cameraAudio(appContext)) "ON" else "OFF",
+        retain = true)
+    val ip = currentIp()
+    c.publish(
+        "$base/stream_url/state",
+        if (ip.isBlank()) "unknown" else "rtsp://$ip:${RtspServer.DEFAULT_PORT}/",
+        retain = true,
+    )
+  }
+
   private fun publishIp() {
     client?.publish("$base/ip/state", currentIp().ifBlank { "unknown" }, retain = true)
   }
@@ -694,9 +746,15 @@ class MqttPublisher(private val appContext: Context) {
     if (ImmortalSettings.cameraEnabled(appContext)) {
       cameraEntity(c, "camera", "Camera")
       button(c, "snapshot", "Take snapshot", icon = "mdi:camera")
+      switchEntity(c, "camera_stream", "Camera streaming", icon = "mdi:video")
+      switchEntity(c, "camera_audio", "Camera audio", icon = "mdi:volume-high")
+      sensor(c, "stream_url", "Stream URL", icon = "mdi:link-variant", diagnostic = true)
     } else {
       publishConfig(c, "camera", "camera", null)
       publishConfig(c, "button", "snapshot", null)
+      publishConfig(c, "switch", "camera_stream", null)
+      publishConfig(c, "switch", "camera_audio", null)
+      publishConfig(c, "sensor", "stream_url", null)
     }
 
     button(c, "go_home", "Home", icon = "mdi:home")
@@ -734,6 +792,9 @@ class MqttPublisher(private val appContext: Context) {
           "sensor" to "ip",
           "camera" to "camera",
           "button" to "snapshot",
+          "switch" to "camera_stream",
+          "switch" to "camera_audio",
+          "sensor" to "stream_url",
           "button" to "screen_off", // legacy (pre-1.41)
       ) + AmbientKind.values().map { "sensor" to it.key }
 
@@ -925,5 +986,11 @@ class MqttPublisher(private val appContext: Context) {
     const val KEEPALIVE_SEC = 45
     const val PING_MS = 20_000L
     const val BACKOFF_MS = 4_000L
+    /**
+     * Biggest image we'll put on the wire. Mosquitto's `message_size_limit` and its equivalents
+     * are commonly set well below a full-quality still, and exceeding one costs the whole
+     * connection rather than just the message.
+     */
+    const val MAX_IMAGE_BYTES = 200_000
   }
 }
