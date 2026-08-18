@@ -1,6 +1,6 @@
 {
-  "versionCode": 62,
-  "versionName": "1.68",
+  "versionCode": 63,
+  "versionName": "1.69",
   "apkUrl": "https://github.com/starbrightlab/immortal/releases/latest/download/immortal.apk",
-  "notes": "Folders work again: drag one app onto another on the home screen and hold it there for a second - the app underneath outlines in white, and releasing makes a folder. Home Assistant gets a real presence sensor - it now reads the Portal's own camera detection instead of guessing from the screensaver, so it stays right even with the photo frame always on. New Temperature and Ambient light sensors appear on models that have them, with a temperature offset to correct for the Portal's own heat under Settings > Home Assistant (MQTT). Microphone mute now stays in sync however you mute it. Screensaver: turn off Blur photo background under Settings > Screensaver for clean black bars instead."
+  "notes": "Home Assistant can take a photo from your Portal's camera. Turn on Camera snapshots under Settings > Immortal and a Camera entity plus a Take snapshot button appear in Home Assistant - point an automation at the button and the picture updates. It stays off until you switch it on, only the Portal itself can switch it on, and the screen says so every time a photo is taken. This is a first step: still photos now, with live video and optional sound designed but not yet built."
 }
