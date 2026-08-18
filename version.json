@@ -1,6 +1,6 @@
 {
-  "versionCode": 61,
-  "versionName": "1.67",
+  "versionCode": 62,
+  "versionName": "1.68",
   "apkUrl": "https://github.com/starbrightlab/immortal/releases/latest/download/immortal.apk",
-  "notes": "Pick your weather location: search for your city under Settings > Weather location, or re-detect automatically - fixes wrong-city weather, sunrise times, and ISS passes. Fill mode fills again: portrait photos crop to full screen when fill is selected, on landscape and portrait-mounted Portals alike. Large shared albums (100+ photos) now load reliably - Apple's servers just needed more patience than we gave them. The Android Recents button only appears with the system bar now and gained an off switch. Home Assistant: microphone mute stays in sync, and the inaudible volume controls are hidden on Portal TV."
+  "notes": "Folders work again: drag one app onto another on the home screen and hold it there for a second - the app underneath outlines in white, and releasing makes a folder. Home Assistant gets a real presence sensor - it now reads the Portal's own camera detection instead of guessing from the screensaver, so it stays right even with the photo frame always on. New Temperature and Ambient light sensors appear on models that have them, with a temperature offset to correct for the Portal's own heat under Settings > Home Assistant (MQTT). Microphone mute now stays in sync however you mute it. Screensaver: turn off Blur photo background under Settings > Screensaver for clean black bars instead."
 }
