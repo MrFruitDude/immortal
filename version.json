@@ -1,6 +1,6 @@
 {
-  "versionCode": 63,
-  "versionName": "1.69",
+  "versionCode": 64,
+  "versionName": "1.70",
   "apkUrl": "https://github.com/starbrightlab/immortal/releases/latest/download/immortal.apk",
-  "notes": "Home Assistant can take a photo from your Portal's camera. Turn on Camera snapshots under Settings > Immortal and a Camera entity plus a Take snapshot button appear in Home Assistant - point an automation at the button and the picture updates. It stays off until you switch it on, only the Portal itself can switch it on, and the screen says so every time a photo is taken. This is a first step: still photos now, with live video and optional sound designed but not yet built."
+  "notes": "Camera snapshots now work: 1.69 shipped them unable to get the camera permission, so the button did nothing. Turning the camera on now asks for permission, and the Portal tells you on screen if a photo can't be taken. It also no longer sends an image too large for your MQTT broker, which used to disconnect the Portal from Home Assistant on every press. New: live video. Turn on Camera streaming in Home Assistant and the Portal serves its camera over RTSP - a Stream URL sensor tells you the address, and it plays in VLC or on a dashboard via go2rtc. Sound is optional, off by default, and switched on with Camera sound. Muting the microphone silences the stream completely, and an intercom announcement takes the microphone back while it's speaking. The camera stays off until you turn it on from the Portal itself - Home Assistant can start a stream but can never enable the camera - and streaming stops on reboot rather than resuming on its own."
 }
