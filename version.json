@@ -1,6 +1,6 @@
 {
-  "versionCode": 66,
-  "versionName": "1.72",
+  "versionCode": 67,
+  "versionName": "1.73",
   "apkUrl": "https://github.com/starbrightlab/immortal/releases/latest/download/immortal.apk",
-  "notes": "Camera streaming now holds a camera-live badge on screen while it runs, so the stream survives another app coming to the front."
+  "notes": "The camera stream now recovers on its own when another app takes the camera, and the on-screen badge is gone \u2014 the Portal's own camera light is the indicator. Removes the snapshot button, which couldn't produce an image small enough for MQTT and interrupted the live stream."
 }
