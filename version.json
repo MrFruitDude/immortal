@@ -1,6 +1,6 @@
 {
-  "versionCode": 64,
-  "versionName": "1.70",
+  "versionCode": 65,
+  "versionName": "1.71",
   "apkUrl": "https://github.com/starbrightlab/immortal/releases/latest/download/immortal.apk",
-  "notes": "Camera snapshots now work: 1.69 shipped them unable to get the camera permission, so the button did nothing. Turning the camera on now asks for permission, and the Portal tells you on screen if a photo can't be taken. It also no longer sends an image too large for your MQTT broker, which used to disconnect the Portal from Home Assistant on every press. New: live video. Turn on Camera streaming in Home Assistant and the Portal serves its camera over RTSP - a Stream URL sensor tells you the address, and it plays in VLC or on a dashboard via go2rtc. Sound is optional, off by default, and switched on with Camera sound. Muting the microphone silences the stream completely, and an intercom announcement takes the microphone back while it's speaking. The camera stays off until you turn it on from the Portal itself - Home Assistant can start a stream but can never enable the camera - and streaming stops on reboot rather than resuming on its own."
+  "notes": "Camera streaming now starts. In 1.70 the Camera streaming switch turned itself back off and nothing happened - the Portal's video encoder was refusing the settings we asked for, and the switch was reporting its state before the stream had a chance to start. Both fixed. Sound works too: the microphone permission was never being granted, so turning on Camera sound now asks for it, and re-running the provisioning kit grants it. Camera sound and a Stream video now toggle both appear under Settings > Home Assistant (MQTT), so you can start the stream and test it on the Portal itself - play rtsp://127.0.0.1:8554/ in VLC - without needing Home Assistant."
 }
