@@ -87,6 +87,29 @@ private final class DeterministicCastClock: CastingClock, @unchecked Sendable {
 }
 
 final class CastingAdapterTests: XCTestCase {
+    func testCastingRowActionsKeepAvailableAndFailedTargetsRecoverable() {
+        XCTAssertEqual(
+            CastingView.rowAction(for: .disconnected),
+            .connect("Connect")
+        )
+        XCTAssertEqual(
+            CastingView.rowAction(for: .connecting),
+            .connect("Connect")
+        )
+        XCTAssertEqual(
+            CastingView.rowAction(for: .disconnecting),
+            .connect("Connect")
+        )
+        XCTAssertEqual(
+            CastingView.rowAction(for: .failed(.transport)),
+            .connect("Retry")
+        )
+        XCTAssertEqual(
+            CastingView.rowAction(for: .connected),
+            .disconnect
+        )
+    }
+
     private func target(
         _ id: String,
         kind: CastingTargetKind,
