@@ -26,8 +26,8 @@ Usage: macos/validate.sh {scope|build|test|check}
 
   scope  Validate the macOS-only project boundary without building.
   build  Build the PortalManager scheme with xcodebuild.
-  test   Run the PortalManager scheme tests with xcodebuild.
-  check  Run scope, build, and test in that order.
+  test   Run the PortalManager unit-test bundle directly.
+  check  Run scope, build-for-testing, then the unit-test bundle.
   release APP_PATH TICKET_PATH
          Validate scope, then codesign/spctl/staple a Release candidate.
 EOF
@@ -61,6 +61,33 @@ run_xcodebuild() {
     "$@"
 }
 
+run_unit_tests_directly() {
+  # Xcode 27 beta's local `xcodebuild test` runner can hang before contacting
+  # its daemon. The unit bundle itself is healthy when launched with `xctest`;
+  # this bridge keeps the required local gate available until that toolchain
+  # regression is resolved.
+  "$XCODEBUILD" \
+    -project "$PROJECT" \
+    -scheme "$SCHEME" \
+    -configuration "$CONFIGURATION" \
+    -destination "$DESTINATION" \
+    -disableAutomaticPackageResolution \
+    build-for-testing
+
+  local app_path
+  app_path="$(find "$HOME/Library/Developer/Xcode/DerivedData" -type d -path "*/Build/Products/$CONFIGURATION/PortalManager.app" -print -quit)" \
+    || fail "unable to locate the built PortalManager app."
+  [[ -n "$app_path" ]] || fail "PortalManager.app was not produced by build-for-testing."
+
+  local test_bundle="$app_path/Contents/PlugIns/PortalManagerTests.xctest"
+  [[ -d "$test_bundle" ]] || fail "PortalManagerTests.xctest was not produced."
+
+  mkdir -p "$test_bundle/Contents/Frameworks"
+  ln -sfh "$app_path/Contents/MacOS/PortalManager.debug.dylib" \
+    "$test_bundle/Contents/Frameworks/PortalManager.debug.dylib"
+  /usr/bin/xcrun xctest "$test_bundle"
+}
+
 command="${1:-}"
 case "$command" in
   scope)
@@ -72,13 +99,11 @@ case "$command" in
     ;;
   test)
     run_scope_check
-    shift
-    run_xcodebuild test "$@"
+    run_unit_tests_directly
     ;;
   check)
     run_scope_check
-    run_xcodebuild build
-    run_xcodebuild test
+    run_unit_tests_directly
     ;;
   release)
     shift || true
