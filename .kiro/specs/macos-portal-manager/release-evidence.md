@@ -6,7 +6,7 @@ validation that remains before release.
 ## Candidate
 
 - Branch: `feature/portal-manager-hardening`
-- Implementation head: `54e6a17`.
+- Implementation head: `54e6a17` (later commits are evidence-only).
 - Base: `ae46e16` (`v1.73`)
 - Android Release APK: `app/build/outputs/apk/release/app-release.apk`
   Built artifact SHA-256 at validation:
@@ -38,7 +38,9 @@ The CI workflow has not run yet because upstream push access is unavailable.
 
 ## Live Fleet baseline
 
-Recorded on 2026-08-24 over local LAN with authenticated Fleet requests.
+Refreshed on 2026-08-25 over local LAN with authenticated Fleet requests.
+mDNS found all three `_immortal-remote._tcp` services. ADB reported no USB
+devices.
 
 | Device | Serial | Endpoint | Result |
 |---|---|---|---|
@@ -46,14 +48,16 @@ Recorded on 2026-08-24 over local LAN with authenticated Fleet requests.
 | Portal Mini 2 | `819LCM02Z100PQ21` | `10.0.0.164:8723` | Registered token rejected (`unauthorized`). |
 | Portal Plus | `818PGA02P113KS20` | `10.0.0.151:8723` | Authenticated; API 28; Immortal 1.60 (54); paused legacy installer; absent. |
 
-mDNS discovery found all three `_immortal-remote._tcp` services.
-
 Both authenticated devices returned `not_found` for `GET /apps/profile`, which
 is the expected baseline because they have not received the candidate build.
 
+Portal Mini also returned a successful sanitized diagnostics snapshot: the
+root filesystem was 95% used and userdata was 48% used.
+
 ## Casting receiver inventory
 
-Local Bonjour discovery found usable receiver candidates on interface 14:
+On 2026-08-24, local Bonjour discovery found usable receiver candidates on
+interface 14:
 
 - AirPlay: `Simon's Fire TV`, TCL model `55QM64L`, endpoint
   `localhost.local.:7000`.
@@ -61,6 +65,12 @@ Local Bonjour discovery found usable receiver candidates on interface 14:
   friendly name `Kitchen speaker`.
 
 These are discovery targets only. They are not playback proof.
+
+A 2026-08-25 read-only refresh again found the Chromecast service ending
+`fdd35`, plus additional Cast receivers and a Cast group. It did not find the
+previously recorded Fire TV under `_airplay._tcp`; it found `Simon's Mac mini`
+and `Simon's MacBook Pro` instead. Receiver visibility changes do not provide
+playback proof, and no connection or playback was started during discovery.
 
 ## Required live workflow evidence
 
