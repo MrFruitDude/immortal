@@ -10,6 +10,11 @@ import SwiftUI
 /// Consumer-facing casting destination picker for local AirPlay and Chromecast
 /// receivers. All protocol work stays behind the injected callbacks.
 struct CastingView: View {
+    enum RowAction: Equatable {
+        case connect(String)
+        case disconnect
+    }
+
     let targets: [CastingTarget]
     let states: [CastingTargetID: CastingConnectionState]
     let isScanning: Bool
@@ -195,27 +200,35 @@ struct CastingView: View {
             Spacer()
             StatusPill(title: stateTitle(state), tone: stateTone(state), pulse: isBusy(state))
 
-            if state == .connected {
+            switch Self.rowAction(for: state) {
+            case .disconnect:
                 GhostButton(title: "Disconnect", systemImage: "xmark.circle") {
                     onDisconnect(target.id)
                 }
                 .disabled(isBusy(state))
-            } else if state == .connecting {
-                PrimaryButton(title: "Connect", systemImage: "play.fill") {
+                .accessibilityLabel("Disconnect \(target.name)")
+            case .connect(let title):
+                PrimaryButton(title: title, systemImage: "play.fill", disabled: isBusy(state)) {
                     onConnect(target.id)
                 }
-                .disabled(isBusy(state))
-            } else {
-                GhostButton(title: "Disconnect", systemImage: "xmark.circle") {
-                    onDisconnect(target.id)
-                }
-                .disabled(isBusy(state))
+                .accessibilityLabel("\(title) \(target.name)")
             }
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 12).fill(PortalTheme.well))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(target.name), \(stateTitle(state))")
+    }
+
+    static func rowAction(for state: CastingConnectionState) -> RowAction {
+        switch state {
+        case .disconnected, .connecting, .disconnecting:
+            return .connect("Connect")
+        case .failed:
+            return .connect("Retry")
+        case .connected:
+            return .disconnect
+        }
     }
 
     private func play(_ target: CastingTarget) {
