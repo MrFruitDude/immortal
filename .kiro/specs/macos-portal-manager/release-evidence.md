@@ -6,7 +6,7 @@ validation that remains before release.
 ## Candidate
 
 - Branch: `feature/portal-manager-hardening`
-- Head: `448a4c4`
+- Head: `1100926`
 - Base: `ae46e16` (`v1.73`)
 - Android Release APK: `app/build/outputs/apk/release/app-release.apk`
 - APK SHA-256:
