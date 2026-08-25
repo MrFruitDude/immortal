@@ -6,7 +6,7 @@ validation that remains before release.
 ## Candidate
 
 - Branch: `feature/portal-manager-hardening`
-- Implementation head: `ae94177` (later commits are evidence-only).
+- Implementation head: `2c0ea0d` (later commits are evidence-only).
 - Base: `ae46e16` (`v1.73`)
 - Android Release APK: `app/build/outputs/apk/release/app-release.apk`
   Built artifact SHA-256 at validation:
@@ -32,11 +32,11 @@ validation that remains before release.
 - Offline Release verification tool check: pass.
 - Workflow YAML parse: pass.
 - CI now includes macOS scope/build/tests, Rust tests, and Android unit tests.
-  Its first run is still blocked by unavailable upstream push access. Signed
-  Release packaging is validated locally because public runners do not have the
-  protected signing key.
-
-The CI workflow has not run yet because upstream push access is unavailable.
+  Upstream PR [starbrightlab/immortal#224](https://github.com/starbrightlab/immortal/pull/224)
+  is clean and mergeable at `2c0ea0d`; its `portal-manager`, `rust-tests`,
+  `unit-tests`, and `version-sync` checks all pass in workflow runs
+  `32908260198` and `32908260199`. Signed Release packaging remains a local
+  gate because public runners do not have the protected signing key.
 
 ## Live Fleet baseline
 
@@ -91,6 +91,6 @@ playback proof, and no connection or playback was started during discovery.
 
 ## Release blockers
 
-- Upstream GitHub push is denied for the current credentials.
+- Upstream review and merge of PR #224 are required.
 - Apple signing identity and authorized Notary submission are unavailable.
 - Device deployment and mutation workflows require explicit operator approval.
