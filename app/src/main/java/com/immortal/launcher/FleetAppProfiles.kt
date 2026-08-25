@@ -134,8 +134,9 @@ object FleetAppProfiles {
                 syntheticUrlAppForProfile(profile.packageName, profile.apkUrl)
             } else {
                 routes.currentCatalog.firstOrNull { it.packageName == profile.packageName }
-                    ?: return STATE_FAILED
+                    ?: return if (routes.currentCatalog.isEmpty()) STATE_PENDING else STATE_FAILED
             }
+        if (routes.installPaused()) return STATE_PENDING
         return when (routes.installApp(app)) {
             "installed" -> STATE_INSTALLED
             FleetRoutes.BUSY -> STATE_PENDING
