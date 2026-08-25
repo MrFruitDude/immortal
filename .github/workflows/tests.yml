@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-stable@stable
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Run fleetctl tests
         run: cargo test --locked --manifest-path provisioning/Cargo.toml

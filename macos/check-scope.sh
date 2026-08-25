@@ -74,6 +74,23 @@ while IFS= read -r path; do
   esac
 done < <(changed_paths | LC_ALL=C sort -u)
 
+# Ignore rules protect credential-like artifacts, but they can accidentally hide a
+# required source file from a fresh checkout. Every native Swift source must be
+# tracked before the project is allowed to build.
+while IFS= read -r -d '' source_file; do
+  relative_path="${source_file#"$REPO_ROOT/"}"
+  if git -C "$REPO_ROOT" check-ignore -q "$relative_path"; then
+    fail "required Swift source is ignored: $relative_path"
+  fi
+  if ! git -C "$REPO_ROOT" ls-files --error-unmatch "$relative_path" >/dev/null 2>&1; then
+    fail "required Swift source is not tracked: $relative_path"
+  fi
+done < <(
+  find "$MACOS_DIR" \
+    \( -name DerivedData -o -name build -o -name target -o -name .git \) -prune -o \
+    -type f -name '*.swift' -print0
+)
+
 # No external package manager or remote Swift package is part of the native target. A
 # future local adapter may use Foundation/Network APIs, but it must not add a downloader,
 # cloud SDK, relay, or hard-coded external dependency.
