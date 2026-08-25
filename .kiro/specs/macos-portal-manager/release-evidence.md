@@ -6,7 +6,7 @@ validation that remains before release.
 ## Candidate
 
 - Branch: `feature/portal-manager-hardening`
-- Implementation head: `54e6a17` (later commits are evidence-only).
+- Implementation head: `dc6b028` (later commits are evidence-only).
 - Base: `ae46e16` (`v1.73`)
 - Android Release APK: `app/build/outputs/apk/release/app-release.apk`
   Built artifact SHA-256 at validation:
@@ -23,7 +23,7 @@ validation that remains before release.
 
 - Android JVM unit tests: pass.
 - Android signed Release build: pass.
-- `fleetctl` Rust unit tests: pass (8 tests).
+- `fleetctl` Rust unit tests: pass (9 tests), including SHA-256 boundary vectors.
 - Background Service Cargo tests: pass (6 tests, locked).
 - Portal Manager scope check: pass.
 - Portal Manager direct XCTest bridge: pass (178 tests).
@@ -74,7 +74,8 @@ playback proof, and no connection or playback was started during discovery.
 
 ## Required live workflow evidence
 
-1. Deploy the candidate to Portal Mini with explicit operator approval.
+1. Deploy the candidate to Portal Mini with explicit operator approval and the
+   recorded APK digest using `fleetctl dev update --sha256`.
 2. Verify `/apps/profile` discovery, set/install, retry reporting, state
    transition, and profile removal.
 3. Exercise credential sharing between authenticated Portals.
