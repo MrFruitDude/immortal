@@ -483,7 +483,7 @@ private final class RecordingFleetTransport: FleetHTTPTransport, @unchecked Send
             RecordedFleetRequest(
                 method: request.routePlan.method,
                 route: request.routePlan.route,
-                body: request.body.map(Data.init)
+                body: request.body.map { Data(bytes: $0) }
             )
         )
         guard !responses.isEmpty else {

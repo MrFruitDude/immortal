@@ -165,7 +165,7 @@ final class FakeFixtureReplay: @unchecked Sendable {
         fixtures: [String: [Data]] = [:],
         recorder: FakeDependencyEventRecorder? = nil
     ) {
-        payloadsByIdentifier = fixtures.mapValues { $0.map(Data.init) }
+        payloadsByIdentifier = fixtures.mapValues { $0.map { Data(bytes: $0) } }
         self.recorder = recorder
     }
 
@@ -191,7 +191,7 @@ final class FakeFixtureReplay: @unchecked Sendable {
         if payload != nil {
             recorder?.append(.fixtureDequeue)
         }
-        return payload.map(Data.init)
+        return payload.map { Data(bytes: $0) }
     }
 
     func remainingCount(for identifier: String) -> Int {
@@ -385,7 +385,7 @@ final class FakeCredentialStore: CredentialStore, @unchecked Sendable {
         seededValues: [CredentialReference: Data] = [:],
         recorder: FakeDependencyEventRecorder? = nil
     ) {
-        values = seededValues.mapValues(Data.init)
+        values = seededValues.mapValues { Data(bytes: $0) }
         self.recorder = recorder
     }
 
@@ -447,7 +447,7 @@ final class FakeCredentialStore: CredentialStore, @unchecked Sendable {
             FakeCredentialOperationMetadata(operation: .read, reference: reference)
         )
         let failure = shouldFailRead
-        let value = values[reference].map(Data.init)
+        let value = values[reference].map { Data(bytes: $0) }
         lock.unlock()
 
         if failure {
