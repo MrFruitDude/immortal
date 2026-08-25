@@ -26,6 +26,20 @@ private struct CastingTargetFixture {
         )
     }
 
+    static func duplicateName(
+        id: String,
+        host: String,
+        name: String = "Living Room"
+    ) throws -> CastingTarget {
+        try CastingTarget(
+            id: CastingTargetID(uncheckedRawValue: id),
+            name: name,
+            kind: .airplay,
+            hostOrAddress: host,
+            port: 700
+        )
+    }
+
     static func chromecast(
         id: String = "chromecast-den",
         name: String = "Den Display",
@@ -200,6 +214,30 @@ final class CastingCoordinatorTests: XCTestCase {
         XCTAssertEqual(result.deadline.timeIntervalSince(result.startedAt), 4, accuracy: 0.001)
         XCTAssertFalse(result.timedOut)
         XCTAssertEqual(result.targets.map(\.name), ["Living Room"])
+    }
+
+    func testDiscoverySuppressesDuplicateStableIDsBeforeStateUpsert() async throws {
+        let coordinator = CastingCoordinator(
+            discoverer: BoundedCastingDiscoverer(targets: [
+                try CastingTargetFixture.duplicateName(
+                    id: "airplay-living-room",
+                    host: "192.168.1.20"
+                ),
+                try CastingTargetFixture.duplicateName(
+                    id: "airplay-living-room",
+                    host: "192.168.1.21"
+                ),
+            ]),
+            controller: RecordingCastingController(),
+            clock: DeterministicCastingClock()
+        )
+
+        let result = try await coordinator.discover(maximumDuration: 4)
+
+        XCTAssertEqual(result.targets.count, 1)
+        XCTAssertEqual(result.targets.first?.hostOrAddress, "192.168.1.20")
+        let record = await coordinator.target(for: CastingTargetID(uncheckedRawValue: "airplay-living-room"))
+        XCTAssertEqual(record?.connectionState, .disconnected)
     }
 
     func testDiscoveryReturnsTimeoutWhenProviderExceedsDeadline() async throws {

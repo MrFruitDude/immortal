@@ -143,7 +143,7 @@ actor CastingCoordinator {
 
         switch outcome {
         case .discovered(let discovered):
-            upsert(discovered)
+            upsert(CastingTargetDiscovererAdapter.unique(discovered))
             if Task.isCancelled { throw CancellationError() }
             return result(startedAt: startedAt, deadline: deadline, reason: nil)
         case .cancelled:
