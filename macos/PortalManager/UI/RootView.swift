@@ -145,7 +145,8 @@ private struct ServicesWorkspaceView: View {
                     ),
                     onStart: { Task { await serviceController.start() } },
                     onStop: { Task { await serviceController.stop() } },
-                    onRestart: { Task { await serviceController.restart() } }
+                    onRestart: { Task { await serviceController.restart() } },
+                    onRefreshHealth: { Task { await serviceController.refreshHealth() } }
                 )
 
                 Spacer(minLength: 24)

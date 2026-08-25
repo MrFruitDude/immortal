@@ -40,17 +40,20 @@ struct BackgroundServiceView: View {
     private let onStart: () -> Void
     private let onStop: () -> Void
     private let onRestart: () -> Void
+    var onRefreshHealth: (() -> Void)? = nil
 
     init(
         state: Binding<BackgroundServiceViewState>,
         onStart: @escaping () -> Void,
         onStop: @escaping () -> Void,
-        onRestart: @escaping () -> Void
+        onRestart: @escaping () -> Void,
+        onRefreshHealth: (() -> Void)? = nil
     ) {
         _state = state
         self.onStart = onStart
         self.onStop = onStop
         self.onRestart = onRestart
+        self.onRefreshHealth = onRefreshHealth
     }
 
     var body: some View {
@@ -136,6 +139,14 @@ struct BackgroundServiceView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("background.service")
+        .task(id: isRunning) {
+            guard isRunning else { return }
+
+            while !Task.isCancelled {
+                onRefreshHealth?()
+                try? await Task.sleep(for: .seconds(5))
+            }
+        }
     }
 
     private var enabledBinding: Binding<Bool> {
