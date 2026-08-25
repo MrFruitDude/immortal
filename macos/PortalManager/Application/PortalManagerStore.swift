@@ -132,6 +132,7 @@ enum PortalManagerIntent: Equatable, Sendable {
     case refreshApps
     case refreshAppProfiles
     case applyAppProfile(AppProfileAction)
+    case retryAppProfile(FleetAppProfile)
     case stageAppSync(String)
     case toggleAppSyncTarget(PortalID)
     case confirmAppSync
@@ -387,6 +388,8 @@ final class PortalManagerStore: ObservableObject {
             Task { await refreshSelectedProfiles() }
         case .applyAppProfile(let action):
             Task { await applyAppProfile(action) }
+        case .retryAppProfile(let profile):
+            Task { await retryAppProfile(profile) }
         case .stageAppSync(let packageName):
             guard !fleetSyncRunning else { return }
             pendingAppSyncPackage = packageName
@@ -660,6 +663,29 @@ final class PortalManagerStore: ObservableObject {
         }
         guard let data = try? JSONSerialization.data(withJSONObject: body) else { return }
 
+        await submitAppProfile(body: data, portalID: portalID, actionTitle: "Applied")
+    }
+
+    private func retryAppProfile(_ profile: FleetAppProfile) async {
+        guard let portalID = selectedPortalID else {
+            statusMessage = "Select an authenticated Portal first."
+            return
+        }
+        let body: [String: Any] = [
+            "packageName": profile.packageName,
+            "action": profile.action,
+            "retry": true,
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: body) else { return }
+
+        await submitAppProfile(body: data, portalID: portalID, actionTitle: "Retried")
+    }
+
+    private func submitAppProfile(
+        body data: Data,
+        portalID: PortalID,
+        actionTitle: String
+    ) async {
         profilesRefreshing = true
         defer { profilesRefreshing = false }
         do {
@@ -672,7 +698,7 @@ final class PortalManagerStore: ObservableObject {
                case .object(let profile)? = payload["profile"],
                case .string(let state)? = profile["state"] {
                 if state == FleetAppProfile.installedState {
-                    profileResults[portalID] = .success("Applied")
+                    profileResults[portalID] = .success(actionTitle)
                 } else {
                     profileResults[portalID] = .failure(state)
                 }

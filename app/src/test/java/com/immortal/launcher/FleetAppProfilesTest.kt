@@ -7,12 +7,21 @@
 
 package com.immortal.launcher
 
+import android.content.Context
+import android.content.SharedPreferences
+import org.json.JSONObject
+import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.fail
 import org.junit.Test
+import org.mockito.ArgumentMatchers.anyInt
+import org.mockito.ArgumentMatchers.anyString
+import org.mockito.Mockito.`when`
+import org.mockito.Mockito.doAnswer
+import org.mockito.Mockito.mock
 
-/** Pure validation rules; persistence and install reconciliation need a device. */
+/** Validation rules and bounded reporting for desired-state reconciliation. */
 class FleetAppProfilesTest {
 
   @Test
@@ -42,6 +51,34 @@ class FleetAppProfilesTest {
     assertRejected("a".repeat(256), "packageName_required")
   }
 
+  @Test
+  fun recordAttempt_countsPendingWorkAndKeepsTerminalOutcomeCurrent() {
+    val stored = AtomicReference("{}")
+    val context = persistingContext(stored)
+
+    FleetAppProfiles.recordAttempt(
+        context,
+        "com.example.app",
+        FleetAppProfiles.STATE_PENDING,
+        nowMs = 1_000L,
+    )
+    val pending = JSONObject(stored.get()).getJSONObject("com.example.app")
+    assertEquals(1, pending.getInt("attempts"))
+    assertEquals(1_000L, pending.getLong("lastAttemptAtMs"))
+    assertEquals("pending", pending.getString("state"))
+
+    FleetAppProfiles.recordAttempt(
+        context,
+        "com.example.app",
+        FleetAppProfiles.STATE_FAILED,
+        nowMs = 2_000L,
+    )
+    val failed = JSONObject(stored.get()).getJSONObject("com.example.app")
+    assertEquals(2, failed.getInt("attempts"))
+    assertEquals(2_000L, failed.getLong("lastAttemptAtMs"))
+    assertEquals("failed", failed.getString("state"))
+  }
+
   private fun assertRejected(packageName: String, expectedMessage: String) {
     try {
       FleetAppProfiles.validatePackageName(packageName)
@@ -50,5 +87,26 @@ class FleetAppProfilesTest {
       return
     }
     fail("Expected $packageName to be rejected")
+  }
+
+  private fun persistingContext(stored: AtomicReference<String>): Context {
+    val context = mock(Context::class.java)
+    val preferences = mock(SharedPreferences::class.java)
+    val editor = mock(SharedPreferences.Editor::class.java)
+
+    `when`(context.getSharedPreferences(anyString(), anyInt()))
+        .thenReturn(preferences)
+    `when`(preferences.getString(anyString(), anyString()))
+        .thenAnswer { invocation -> stored.get() }
+    `when`(preferences.edit())
+        .thenReturn(editor)
+    doAnswer { invocation ->
+          stored.set(invocation.getArgument(1))
+          editor
+        }
+        .`when`(editor)
+        .putString(anyString(), anyString())
+
+    return context
   }
 }

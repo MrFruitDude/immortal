@@ -55,7 +55,7 @@ object FleetAppProfiles {
                 lastAttemptAtMs =
                     report.optJSONObject(pkg)?.optLong("lastAttemptAtMs", 0L)
                     ?.takeIf { it > 0 },
-                state = stateFor(pkg, action, report),
+                state = stateFor(pkg, report),
             )
         }.sortedBy { it.packageName }.toList()
     }
@@ -152,22 +152,18 @@ object FleetAppProfiles {
         }
         val report = readObject(c, KEY_REPORT)
         val item = report.optJSONObject(packageName) ?: JSONObject()
-        if (state != STATE_PENDING) {
-            item.put("attempts", item.optInt("attempts", 0) + 1)
-            item.put("lastAttemptAtMs", nowMs)
-            item.put("state", state)
-        }
+        // Every reconciliation is observable work: busy attempts are counted too,
+        // while their terminal state remains pending for later operator retry.
+        item.put("attempts", item.optInt("attempts", 0) + 1)
+        item.put("lastAttemptAtMs", nowMs)
+        item.put("state", state)
         report.put(packageName, item)
         trimHistory(report)
         write(c, KEY_REPORT, report)
     }
 
-    private fun stateFor(packageName: String, action: String, report: JSONObject): String {
+    private fun stateFor(packageName: String, report: JSONObject): String {
         val item = report.optJSONObject(packageName)
-        if (action == ACTION_REMOVE) {
-            return item?.optString("state")?.takeIf { it.isNotBlank() && it != STATE_PENDING }
-                ?: STATE_PENDING
-        }
         return item?.optString("state")?.takeIf { it.isNotBlank() } ?: STATE_PENDING
     }
 

@@ -554,6 +554,16 @@ struct PortalOverviewPane: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            if profile.state != FleetAppProfile.installedState {
+                GhostButton(
+                    title: "Retry",
+                    systemImage: "arrow.clockwise",
+                    disabled: store.profilesRefreshing || store.fleetSyncRunning
+                ) {
+                    store.dispatch(.retryAppProfile(profile))
+                }
+                .accessibilityLabel("Retry \(profile.packageName)")
+            }
             StatusPill(
                 title: profile.stateTitle,
                 tone: profile.state == FleetAppProfile.failedState

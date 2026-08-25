@@ -787,6 +787,13 @@ fn profile_body(action: &str, package_name: &str, apk_url: Option<&str>) -> Stri
     build_obj(&fields)
 }
 
+fn retry_profile_body(package_name: &str) -> String {
+    build_obj(&[
+        ("packageName", Field::S(package_name.to_string())),
+        ("retry", Field::B(true)),
+    ])
+}
+
 fn cmd_apps_profile(args: &Args) -> i32 {
     let action = args.pos(0).map(|s| s.as_str()).unwrap_or("get");
     match action {
@@ -823,6 +830,12 @@ fn cmd_apps_profile(args: &Args) -> i32 {
                 );
                 show(s, b)
             })
+        }
+        "retry" => {
+            let pkg = args.pos(1).cloned().unwrap_or_else(|| {
+                die("apps-profile retry: package name required")
+            });
+            post_json(args, "/apps/profile", retry_profile_body(&pkg))
         }
         other => die(&format!(
             "apps-profile: unknown action {:?} (use get|set|remove)",
@@ -1133,7 +1146,7 @@ COMMANDS:
   devices                       list devices in the local registry (fleet/*.json)
   info                          device identity, version, install/presence state
   apps                          catalog apps and what's installed
-  apps-profile <get|set|remove> [pkg]
+  apps-profile <get|set|remove|retry> [pkg]
                                 inspect or manage desired app state (--desired
                                 install|remove, --apk-url URL)
   diag                          diagnostics snapshot
@@ -1279,6 +1292,14 @@ mod tests {
         assert_eq!(
             profile_body("remove", "com.example.app", None),
             "{\"action\":\"remove\",\"packageName\":\"com.example.app\"}"
+        );
+    }
+
+    #[test]
+    fn retry_profile_body_targets_an_existing_profile() {
+        assert_eq!(
+            retry_profile_body("com.example.app"),
+            "{\"packageName\":\"com.example.app\",\"retry\":true}"
         );
     }
 }

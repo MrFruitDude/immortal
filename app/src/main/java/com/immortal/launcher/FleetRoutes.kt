@@ -226,19 +226,37 @@ class FleetRoutes(private val context: Context) {
           val body = parseJson(req.bodyText()) ?: return resp(400, err("bad_json"))
           val pkg = body.optString("packageName").ifBlank { null }
               ?: return resp(400, err("packageName_required"))
+          val retry = body.optBoolean("retry", false)
           val action = body.optString("action").ifBlank { "install" }
+          fun reconcile(candidate: FleetAppProfiles.Profile): String =
+              when (candidate.action) {
+                FleetAppProfiles.ACTION_REMOVE ->
+                    FleetAppProfiles.reconcileRemove(context, candidate.packageName)
+                else -> FleetAppProfiles.reconcileInstall(this, context, candidate)
+              }
+
           try {
+            if (retry) {
+              val profile = FleetAppProfiles.load(context)
+                  .firstOrNull { it.packageName == pkg }
+                  ?: return resp(404, err("profile_not_found"))
+              val result = reconcile(profile)
+              FleetAppProfiles.recordAttempt(
+                  context,
+                  profile.packageName,
+                  result,
+                  System.currentTimeMillis(),
+              )
+              return resp(200, profileResponse(profile.packageName).put("applied", result))
+            }
+
             val (profile, result) = FleetAppProfiles.set(
                 context,
                 pkg,
                 action,
                 body.optString("apkUrl").ifBlank { null },
-            ) { candidate ->
-              when (candidate.action) {
-                FleetAppProfiles.ACTION_REMOVE -> FleetAppProfiles.reconcileRemove(context, candidate.packageName)
-                else -> FleetAppProfiles.reconcileInstall(this, context, candidate)
-              }
-            }
+                reconcile = ::reconcile,
+            )
             if (result == FleetAppProfiles.RESULT_ALREADY_ABSENT ||
                 result == FleetAppProfiles.RESULT_REMOVED) {
               return resp(200, ok().put("profile", profileJson(profile)).put("result", result))
