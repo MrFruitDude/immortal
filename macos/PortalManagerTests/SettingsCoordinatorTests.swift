@@ -797,7 +797,7 @@ private final class SettingsRecordingTransport: FleetHTTPTransport, @unchecked S
             SettingsRecordedRequest(
                 method: request.routePlan.method,
                 route: request.routePlan.route,
-                body: request.body.map(Data.init)
+                body: request.body.map { Data(bytes: $0) }
             )
         )
         guard !responses.isEmpty else {
