@@ -6,11 +6,14 @@ validation that remains before release.
 ## Candidate
 
 - Branch: `feature/portal-manager-hardening`
-- Head: `5f9fd7f`
+- Implementation head: `ae03807` (later commits are evidence-only).
 - Base: `ae46e16` (`v1.73`)
 - Android Release APK: `app/build/outputs/apk/release/app-release.apk`
-- APK SHA-256:
-  `35dfaf6d94dcbfd626d653f69b1c0c4ba446e065361c44ffbed3c907edc2f6e5`
+- Built artifact SHA-256 at validation:
+  `e321c4d717c08063db96dce2915cebfef2697c2925a92e64374a31bb714a5f66`
+- Android Release packaging omits VCS HEAD metadata. APK signing remains
+  nondeterministic because the configured RSA key uses APK Signature Scheme v2;
+  verify the exact artifact by digest immediately before deployment.
 - Signing certificate SHA-256:
   `a0bdd0ab4a888d8d9ca31e78fd065bd6273c0d740672352c52900316df7bbbb0`
 - macOS signed/notarized artifact: pending operator signing identity and
@@ -26,9 +29,10 @@ validation that remains before release.
 - Portal Manager direct XCTest bridge: pass (178 tests).
 - Offline Release verification tool check: pass.
 - Workflow YAML parse: pass.
-- CI now includes the Rust and signed Release gates; its first run is still
-  blocked by unavailable upstream push access.
-- Working tree at the recorded head: clean.
+- CI now includes macOS scope/build/tests, Rust tests, and Android unit tests.
+  Its first run is still blocked by unavailable upstream push access. Signed
+  Release packaging is validated locally because public runners do not have the
+  protected signing key.
 
 The CI workflow has not run yet because upstream push access is unavailable.
 
