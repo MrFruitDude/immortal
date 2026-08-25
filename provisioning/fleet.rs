@@ -776,6 +776,61 @@ fn cmd_update(args: &Args) -> i32 {
     post_json(args, "/update", body)
 }
 
+fn profile_body(action: &str, package_name: &str, apk_url: Option<&str>) -> String {
+    let mut fields = vec![
+        ("action", Field::S(action.to_string())),
+        ("packageName", Field::S(package_name.to_string())),
+    ];
+    if let Some(url) = apk_url {
+        fields.push(("apkUrl", Field::S(url.to_string())));
+    }
+    build_obj(&fields)
+}
+
+fn cmd_apps_profile(args: &Args) -> i32 {
+    let action = args.pos(0).map(|s| s.as_str()).unwrap_or("get");
+    match action {
+        "get" => simple_get(args, "/apps/profile"),
+        "set" => {
+            let pkg = args.pos(1).cloned().unwrap_or_else(|| {
+                die("apps-profile set: package name required")
+            });
+            let desired = args.flag("desired").unwrap_or_else(|| "install".into());
+            if desired != "install" && desired != "remove" {
+                die("--desired expects install or remove");
+            }
+            if desired == "remove" && args.has("apk-url") {
+                die("apps-profile set --desired remove cannot use --apk-url");
+            }
+            post_json(
+                args,
+                "/apps/profile",
+                profile_body(&desired, &pkg, args.flag("apk-url").as_deref()),
+            )
+        }
+        "remove" => {
+            let pkg = args.pos(1).cloned().unwrap_or_else(|| {
+                die("apps-profile remove: package name required")
+            });
+            let targets = resolve_targets(args);
+            fanout(&targets, |d| {
+                let (s, b) = request(
+                    d,
+                    "DELETE",
+                    "/apps/profile",
+                    &[("packageName", pkg.clone())],
+                    None,
+                );
+                show(s, b)
+            })
+        }
+        other => die(&format!(
+            "apps-profile: unknown action {:?} (use get|set|remove)",
+            other
+        )),
+    }
+}
+
 fn cmd_config(args: &Args) -> i32 {
     let body = if let Some(name) = args.flag("name") {
         build_obj(&[("name", Field::S(name))])
@@ -1078,6 +1133,9 @@ COMMANDS:
   devices                       list devices in the local registry (fleet/*.json)
   info                          device identity, version, install/presence state
   apps                          catalog apps and what's installed
+  apps-profile <get|set|remove> [pkg]
+                                inspect or manage desired app state (--desired
+                                install|remove, --apk-url URL)
   diag                          diagnostics snapshot
   install <pkg> [--apk-url URL] install a catalog package (or a direct APK URL)
   update [<pkg>|--all|--check]  update apps (or dry-run available updates)
@@ -1130,6 +1188,7 @@ fn main() {
         "devices" => cmd_devices(),
         "info" => simple_get(&args, "/info"),
         "apps" => simple_get(&args, "/apps"),
+        "apps-profile" => cmd_apps_profile(&args),
         "diag" => simple_get(&args, "/diag"),
         "install" => cmd_install(&args),
         "update" => cmd_update(&args),
@@ -1209,5 +1268,17 @@ mod tests {
     fn hhmm_parsing() {
         assert_eq!(hhmm_to_min("22:00"), 1320);
         assert_eq!(hhmm_to_min("07:30"), 450);
+    }
+
+    #[test]
+    fn profile_body_builds_desired_state_contract() {
+        assert_eq!(
+            profile_body("install", "com.example.app", Some("https://example.invalid/app.apk")),
+            "{\"action\":\"install\",\"packageName\":\"com.example.app\",\"apkUrl\":\"https://example.invalid/app.apk\"}"
+        );
+        assert_eq!(
+            profile_body("remove", "com.example.app", None),
+            "{\"action\":\"remove\",\"packageName\":\"com.example.app\"}"
+        );
     }
 }
