@@ -6,7 +6,7 @@ validation that remains before release.
 ## Candidate
 
 - Branch: `feature/portal-manager-hardening`
-- Head: `1100926`
+- Head: `5f9fd7f`
 - Base: `ae46e16` (`v1.73`)
 - Android Release APK: `app/build/outputs/apk/release/app-release.apk`
 - APK SHA-256:
@@ -19,12 +19,15 @@ validation that remains before release.
 ## Automated gates
 
 - Android JVM unit tests: pass.
+- Android signed Release build: pass.
 - `fleetctl` Rust unit tests: pass (8 tests).
-- Background Service Cargo tests: pass (6 tests).
+- Background Service Cargo tests: pass (6 tests, locked).
 - Portal Manager scope check: pass.
 - Portal Manager direct XCTest bridge: pass (178 tests).
 - Offline Release verification tool check: pass.
 - Workflow YAML parse: pass.
+- CI now includes the Rust and signed Release gates; its first run is still
+  blocked by unavailable upstream push access.
 - Working tree at the recorded head: clean.
 
 The CI workflow has not run yet because upstream push access is unavailable.
