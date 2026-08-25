@@ -6,7 +6,7 @@ validation that remains before release.
 ## Candidate
 
 - Branch: `feature/portal-manager-hardening`
-- Implementation head: `54e6a17`.
+- Implementation head: `54e6a17` (later commits are evidence-only).
 - Base: `ae46e16` (`v1.73`)
 - Android Release APK: `app/build/outputs/apk/release/app-release.apk`
   Built artifact SHA-256 at validation:
@@ -38,7 +38,9 @@ The CI workflow has not run yet because upstream push access is unavailable.
 
 ## Live Fleet baseline
 
-Recorded on 2026-08-24 over local LAN with authenticated Fleet requests.
+Refreshed on 2026-08-25 over local LAN with authenticated Fleet requests.
+mDNS found all three `_immortal-remote._tcp` services. ADB reported no USB
+devices.
 
 | Device | Serial | Endpoint | Result |
 |---|---|---|---|
@@ -46,14 +48,16 @@ Recorded on 2026-08-24 over local LAN with authenticated Fleet requests.
 | Portal Mini 2 | `<portal-mini-2-serial>` | `192.0.2.x:8723` | Registered token rejected (`unauthorized`). |
 | Portal Plus | `<portal-plus-serial>` | `192.0.2.x:8723` | Authenticated; API 28; Immortal 1.60 (54); paused legacy installer; absent. |
 
-mDNS discovery found all three `_immortal-remote._tcp` services.
-
 Both authenticated devices returned `not_found` for `GET /apps/profile`, which
 is the expected baseline because they have not received the candidate build.
 
+Portal Mini also returned a successful sanitized diagnostics snapshot: the
+root filesystem was 95% used and userdata was 48% used.
+
 ## Casting receiver inventory
 
-Local Bonjour discovery found usable receiver candidates on interface 14:
+On 2026-08-24, local Bonjour discovery found usable receiver candidates on
+interface 14:
 
 - AirPlay: `<tv-receiver>`, TCL model `<tv-model>`, endpoint
   `localhost.local.:7000`.
@@ -61,6 +65,12 @@ Local Bonjour discovery found usable receiver candidates on interface 14:
   friendly name `<speaker-receiver>`.
 
 These are discovery targets only. They are not playback proof.
+
+A 2026-08-25 read-only refresh again found the Chromecast service ending
+`<id>`, plus additional Cast receivers and a Cast group. It did not find the
+previously recorded TV receiver under `_airplay._tcp`; it found `<mac-receiver-1>`
+and `<mac-receiver-2>` instead. Receiver visibility changes do not provide
+playback proof, and no connection or playback was started during discovery.
 
 ## Required live workflow evidence
 
