@@ -54,7 +54,7 @@ class FleetAppProfilesTest {
   @Test
   fun recordAttempt_countsPendingWorkAndKeepsTerminalOutcomeCurrent() {
     val stored = AtomicReference("{}")
-    val context = persistingContext(stored)
+    val context = persistingContext(mapOf("report" to stored))
 
     FleetAppProfiles.recordAttempt(
         context,
@@ -79,6 +79,77 @@ class FleetAppProfilesTest {
     assertEquals("failed", failed.getString("state"))
   }
 
+  @Test
+  fun set_preservesAttemptsWhenTheInstallContractIsUnchanged() {
+    val stored = keyedStorage()
+    val context = persistingContext(stored)
+    stored.getValue("desired").set(
+        JSONObject()
+            .put(
+                "com.example.app",
+                JSONObject().put("action", "install").put("apkUrl", "https://example.invalid/a.apk"))
+            .toString())
+    FleetAppProfiles.recordAttempt(context, "com.example.app", "failed", nowMs = 1_000L)
+
+    var reconciledAttempts: Int? = null
+    val (profile, _) = FleetAppProfiles.set(
+        context,
+        "com.example.app",
+        "install",
+        "https://example.invalid/a.apk",
+    ) { candidate ->
+        reconciledAttempts = candidate.attempts
+        "installed"
+    }
+
+    assertEquals(1, profile.attempts)
+    assertEquals(1, reconciledAttempts)
+    assertEquals("failed", profile.state)
+  }
+
+  @Test
+  fun set_clearsOldAttemptsWhenTheActionOrApkTargetChanges() {
+    val stored = keyedStorage()
+    val context = persistingContext(stored)
+    stored.getValue("desired").set(
+        JSONObject()
+            .put(
+                "com.example.app",
+                JSONObject().put("action", "install").put("apkUrl", "https://example.invalid/a.apk"))
+            .toString())
+    FleetAppProfiles.recordAttempt(context, "com.example.app", "failed", nowMs = 1_000L)
+
+    var removeProfile: FleetAppProfiles.Profile? = null
+    val (removeResult, _) = FleetAppProfiles.set(
+        context,
+        "com.example.app",
+        "remove",
+        apkUrl = null,
+    ) { candidate ->
+        removeProfile = candidate
+        "failed"
+    }
+
+    assertEquals(0, removeResult.attempts)
+    assertEquals(0, removeProfile?.attempts)
+    assertEquals("remove", removeProfile?.action)
+
+    var installProfile: FleetAppProfiles.Profile? = null
+    val (installResult, _) = FleetAppProfiles.set(
+        context,
+        "com.example.app",
+        "install",
+        "https://example.invalid/b.apk",
+    ) { candidate ->
+        installProfile = candidate
+        "failed"
+    }
+
+    assertEquals(0, installResult.attempts)
+    assertEquals(0, installProfile?.attempts)
+    assertEquals("https://example.invalid/b.apk", installProfile?.apkUrl)
+  }
+
   private fun assertRejected(packageName: String, expectedMessage: String) {
     try {
       FleetAppProfiles.validatePackageName(packageName)
@@ -89,7 +160,13 @@ class FleetAppProfilesTest {
     fail("Expected $packageName to be rejected")
   }
 
-  private fun persistingContext(stored: AtomicReference<String>): Context {
+  private fun keyedStorage(): MutableMap<String, AtomicReference<String>> =
+      mutableMapOf("desired" to AtomicReference("{}"), "report" to AtomicReference("{}"))
+
+  private fun persistingContext(
+      stored: Map<String, AtomicReference<String>>,
+      fallback: AtomicReference<String> = AtomicReference("{}"),
+  ): Context {
     val context = mock(Context::class.java)
     val preferences = mock(SharedPreferences::class.java)
     val editor = mock(SharedPreferences.Editor::class.java)
@@ -97,15 +174,27 @@ class FleetAppProfilesTest {
     `when`(context.getSharedPreferences(anyString(), anyInt()))
         .thenReturn(preferences)
     `when`(preferences.getString(anyString(), anyString()))
-        .thenAnswer { invocation -> stored.get() }
+        .thenAnswer { invocation ->
+            val key = invocation.getArgument<String>(0)
+            (stored[key] ?: fallback).get()
+        }
     `when`(preferences.edit())
         .thenReturn(editor)
     doAnswer { invocation ->
-          stored.set(invocation.getArgument(1))
+          val key = invocation.getArgument<String>(0)
+          val value = invocation.getArgument<String>(1)
+          (stored[key] ?: fallback).set(value)
           editor
         }
         .`when`(editor)
         .putString(anyString(), anyString())
+    doAnswer { invocation ->
+          val key = invocation.getArgument<String>(0)
+          (stored[key] ?: fallback).set("{}")
+          editor
+        }
+        .`when`(editor)
+        .remove(anyString())
 
     return context
   }
