@@ -190,7 +190,8 @@ object FleetAppProfiles {
     }
 
     private fun readObject(c: Context, key: String): JSONObject =
-        runCatching { JSONObject(prefs(c).getString(key, "{}")) }.getOrDefault(JSONObject())
+        runCatching { JSONObject(prefs(c).getString(key, "{}") ?: "{}") }
+            .getOrDefault(JSONObject())
 
     private fun write(c: Context, key: String, value: JSONObject) {
         prefs(c).edit().putString(key, value.toString()).apply()
