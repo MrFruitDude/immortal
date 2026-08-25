@@ -447,6 +447,7 @@ final class BackgroundServiceControllerTests: XCTestCase {
         guard let startedAt = controller.lastHealthCheckAt else {
             return XCTFail("Expected startup to record a health-check timestamp.")
         }
+        clock.advance(by: .milliseconds(200))
         await controller.refreshHealth()
 
         XCTAssertEqual(controller.lifecycleState, .running)
