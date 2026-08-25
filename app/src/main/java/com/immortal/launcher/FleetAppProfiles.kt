@@ -72,6 +72,7 @@ object FleetAppProfiles {
             ?: throw IllegalArgumentException("invalid_action")
 
         val desired = readObject(c, KEY_DESIRED)
+        val previous = desired.optJSONObject(normalizedPackage)
         if (normalizedAction == ACTION_REMOVE) {
             if (apkUrl != null) throw IllegalArgumentException("apk_url_not_allowed")
             if (!desired.has(normalizedPackage)) {
@@ -87,18 +88,23 @@ object FleetAppProfiles {
             if (desired.length() >= MAX_PACKAGES && !desired.has(normalizedPackage)) {
                 throw IllegalArgumentException("profile_limit_reached")
             }
-            val previous = desired.optJSONObject(normalizedPackage)
             desired.put(
                 normalizedPackage,
                 JSONObject()
                     .put("action", normalizedAction)
                     .put("apkUrl", apkUrl ?: "")
             )
-            // Changing the APK target is a new deployment contract and must be retried
-            // even when the package already has prior attempts.
-            if (previous?.optString("apkUrl") != apkUrl.orEmpty()) clearAttempts(c, normalizedPackage)
         }
         write(c, KEY_DESIRED, desired)
+
+        // A different action or APK target is a new deployment contract. Old
+        // attempts must not remain visible as though they described this request.
+        if (previous != null &&
+            (previous.optString("action") != normalizedAction ||
+                previous.optString("apkUrl") != apkUrl.orEmpty())
+        ) {
+            clearAttempts(c, normalizedPackage)
+        }
 
         val profile = load(c).first { it.packageName == normalizedPackage }
         val result = reconcile(profile)
