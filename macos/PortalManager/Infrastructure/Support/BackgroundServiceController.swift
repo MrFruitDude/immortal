@@ -302,6 +302,60 @@ final class BackgroundServiceController: ObservableObject {
         await start()
     }
 
+    /// Reconciles the advertised running state with the helper's loopback
+    /// health contract. The services screen calls this periodically so a crash,
+    /// port takeover, or stale adopted process cannot remain reported as ready.
+    func refreshHealth() async {
+        guard case .running = lifecycleState, let identity = processIdentity else {
+            return
+        }
+
+        do {
+            let health = try await healthChecker.check(
+                port: port,
+                timeout: healthPollInterval
+            )
+
+            // A stop or restart may have completed while health I/O was active;
+            // never apply a stale observation over newer lifecycle ownership.
+            guard case .running = lifecycleState,
+                  processIdentity == identity else {
+                return
+            }
+            guard health.processID == identity.processID, health.isCompatible else {
+                throw BackgroundServiceError.healthCheckFailed
+            }
+
+            lastHealthCheckAt = clock.now
+        } catch {
+            guard case .running = lifecycleState, processIdentity == identity else {
+                return
+            }
+            await recoverUnhealthy(identity)
+        }
+    }
+
+    private func recoverUnhealthy(
+        _ identity: BackgroundServiceProcessIdentity
+    ) async {
+        lifecycleState = .stopping
+        do {
+            try await launcher.terminate(
+                processID: identity.processID,
+                timeout: shutdownTimeout
+            )
+        } catch {
+            fail(with: .stopFailed)
+            return
+        }
+
+        if processIdentity == identity {
+            processIdentity = nil
+        }
+        lastHealthCheckAt = nil
+        lifecycleState = .failed(BackgroundServiceError.healthCheckFailed.sanitizedMessage)
+    }
+
     private var canStart: Bool {
         switch lifecycleState {
         case .stopped, .failed:

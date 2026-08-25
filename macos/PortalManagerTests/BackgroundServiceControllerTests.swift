@@ -429,6 +429,81 @@ final class BackgroundServiceControllerTests: XCTestCase {
     }
 
     @MainActor
+    func testHealthRefreshAcceptsTheTrackedCompatibleService() async throws {
+        let clock = FakeManagerClock(now: Date(timeIntervalSince1970: 100))
+        let launcher = ScriptedBackgroundServiceLauncher()
+        let checker = ScriptedBackgroundServiceHealthChecker(outcomes: [
+            .failure(URLError(.cannotConnectToHost)),
+            .compatible(500),
+            .compatible(500),
+        ])
+        let controller = makeController(
+            launcher: launcher,
+            checker: checker,
+            clock: clock
+        )
+
+        await controller.start()
+        guard let startedAt = controller.lastHealthCheckAt else {
+            return XCTFail("Expected startup to record a health-check timestamp.")
+        }
+        await controller.refreshHealth()
+
+        XCTAssertEqual(controller.lifecycleState, .running)
+        XCTAssertEqual(controller.processIdentity?.processID, 500)
+        XCTAssertEqual(checker.checkCount(), 3)
+        XCTAssertEqual(controller.lastHealthCheckAt, Date(timeIntervalSince1970: 100.2))
+        XCTAssertGreaterThan(controller.lastHealthCheckAt!, startedAt)
+        XCTAssertEqual(launcher.terminationCount(), 0)
+    }
+
+    @MainActor
+    func testStaleHealthTerminatesOwnershipAndReportsSanitizedFailure() async throws {
+        let launcher = ScriptedBackgroundServiceLauncher()
+        let checker = ScriptedBackgroundServiceHealthChecker(outcomes: [
+            .failure(URLError(.cannotConnectToHost)),
+            .compatible(500),
+            .compatible(501),
+        ])
+        let controller = makeController(launcher: launcher, checker: checker)
+
+        await controller.start()
+        await controller.refreshHealth()
+
+        XCTAssertNil(controller.processIdentity)
+        XCTAssertNil(controller.lastHealthCheckAt)
+        XCTAssertEqual(
+            controller.lifecycleState,
+            .failed("The background service is not responding.")
+        )
+        XCTAssertEqual(launcher.recordedTerminatedIDs(), [500])
+    }
+
+    @MainActor
+    func testRawRefreshFailureReconcilesWithoutExposingTransportDetail() async throws {
+        let rawMessage = "secret loopback transcript /private/raw/path"
+        let launcher = ScriptedBackgroundServiceLauncher()
+        let checker = ScriptedBackgroundServiceHealthChecker(outcomes: [
+            .failure(URLError(.cannotConnectToHost)),
+            .compatible(500),
+            .failure(NSError(domain: "test.raw", code: 42, userInfo: [
+                NSLocalizedDescriptionKey: rawMessage,
+            ])),
+        ])
+        let controller = makeController(launcher: launcher, checker: checker)
+
+        await controller.start()
+        await controller.refreshHealth()
+
+        XCTAssertNil(controller.processIdentity)
+        XCTAssertEqual(
+            controller.lifecycleState,
+            .failed("The background service is not responding.")
+        )
+        XCTAssertEqual(launcher.recordedTerminatedIDs(), [500])
+    }
+
+    @MainActor
     func testViewCanBeConstructedAndRenderedWithoutAProcess() {
         let binding = Binding<BackgroundServiceViewState>(
             get: {
