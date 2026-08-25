@@ -14,6 +14,9 @@ jobs:
       - name: Validate scope, build, and tests
         run: ./macos/validate.sh check
 
+      - name: Check offline Release verification tools
+        run: ./macos/package-release.sh --check-tools
+
   unit-tests:
     runs-on: ubuntu-latest
     steps:

@@ -114,7 +114,7 @@ case "$command" in
     PORTAL_MANAGER_CONFIGURATION=Release run_xcodebuild build
 
     /usr/bin/codesign --verify --strict --verbose=2 "$app_path"
-    /usr/bin/spctl --assess --type execute --verbose=2 "$app_path"
+    /usr/sbin/spctl --assess --type execute --verbose=2 "$app_path"
     if [[ -d "$ticket_path" ]]; then
       fail "TICKET_PATH must be the ticket file, not a directory"
     fi

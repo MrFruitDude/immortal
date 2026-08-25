@@ -4,6 +4,7 @@
 #
 # Usage:
 #   macos/package-release.sh /path/to/PortalManager.app /path/to/notarization.json
+#   macos/package-release.sh --check-tools
 #
 # This script never submits data to Apple and never reads credentials. The
 # candidate must already have passed notarization in the operator's release
@@ -19,6 +20,17 @@ fail() {
 }
 
 [[ "$(uname -s)" == "Darwin" ]] || fail "Release verification requires macOS."
+
+if [[ "${1:-}" == "--check-tools" ]]; then
+  [[ $# -eq 1 ]] || fail "--check-tools takes no other arguments"
+  for tool in /usr/bin/codesign /usr/sbin/spctl /usr/bin/stapler \
+      /usr/libexec/PlistBuddy /usr/bin/shasum /usr/bin/xcrun; do
+    [[ -x "$tool" ]] || fail "missing verification tool: $tool"
+  done
+  printf '{"codesign":true,"gatekeeper":true,"stapler":true,"plist":true,"sha256":true}\n'
+  exit 0
+fi
+
 [[ $# -eq 2 ]] || fail "usage: macos/package-release.sh APP_PATH TICKET_PATH"
 
 app_path="$1"
@@ -33,7 +45,7 @@ bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/C
 [[ "$bundle_id" == "$EXPECTED_BUNDLE_ID" ]] || fail "unexpected bundle id: $bundle_id"
 
 /usr/bin/codesign --verify --strict --verbose=2 "$app_path"
-/usr/bin/spctl --assess --type execute --verbose=2 "$app_path"
+/usr/sbin/spctl --assess --type execute --verbose=2 "$app_path"
 /usr/bin/stapler validate "$app_path"
 
 version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_path/Contents/Info.plist")"
