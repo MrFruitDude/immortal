@@ -6,11 +6,11 @@ validation that remains before release.
 ## Candidate
 
 - Branch: `feature/portal-manager-hardening`
-- Implementation head: `ae03807` (later commits are evidence-only).
+- Implementation head: `04a73ef` (later commits are evidence-only).
 - Base: `ae46e16` (`v1.73`)
 - Android Release APK: `app/build/outputs/apk/release/app-release.apk`
-- Built artifact SHA-256 at validation:
-  `e321c4d717c08063db96dce2915cebfef2697c2925a92e64374a31bb714a5f66`
+  Built artifact SHA-256 at validation:
+  `97338bc47990b59df2995c0e91cea0ff12db8891d05a8d0e2699af1871abdde1`
 - Android Release packaging omits VCS HEAD metadata. APK signing remains
   nondeterministic because the configured RSA key uses APK Signature Scheme v2;
   verify the exact artifact by digest immediately before deployment.
