@@ -26,6 +26,8 @@ validation that remains before release.
 - Android signed Release build: pass.
 - Android Release deployment preflight: pass (identity, signer, v2 scheme, and
   artifact digest).
+- Android Release deployment preflight was rechecked at the current candidate;
+  identity, signature scheme, certificate digest, and artifact digest all match.
 - `fleetctl` Rust unit tests: pass (9 tests), including SHA-256 boundary vectors.
 - Background Service Cargo tests: pass (8 tests total: 7 units plus one
   real-process lifecycle test, locked), including readiness, clean `SIGTERM`
@@ -76,6 +78,11 @@ root filesystem was 95% used and userdata was 48% used.
 
 ## Casting receiver inventory
 
+On 2026-08-26, a read-only Bonjour refresh found two local computer receivers
+under `_airplay._tcp` and three Google Home speakers plus one Cast group under
+`_googlecast._tcp`. It found no television-class AirPlay receiver, so a real
+AirPlay playback/stop cycle remains unavailable without another receiver.
+
 On 2026-08-24, local Bonjour discovery found usable receiver candidates on
 interface 14:
 
@@ -89,6 +96,10 @@ additional Cast receivers and a Cast group. It did not find the previously
 recorded television under `_airplay._tcp`; it found two computer receivers
 instead. Receiver visibility changes do not provide playback proof, and no
 connection or playback was started during discovery.
+
+A 2026-08-26 release preflight reconfirmed the exact signed Android artifact.
+No Portal deployment, developer-mode change, app-profile mutation, playback,
+or other live mutation was attempted during this evidence refresh.
 
 ## Required live workflow evidence
 
