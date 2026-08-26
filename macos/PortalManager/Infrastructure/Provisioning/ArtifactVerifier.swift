@@ -105,6 +105,15 @@ struct LocalArtifactVerifier: ArtifactVerifier, Sendable {
             }
         }
 
+        /// The production Immortal Release signer. Full provisioning rejects
+        /// any APK that cannot prove this exact certificate.
+        static let productionSigningCertificateSHA256 =
+            "a0bdd0ab4a888d8d9ca31e78fd065bd6273c0d740672352c52900316df7bbbb0"
+
+        static let immortalProduction = Configuration(
+            acceptedCertificateSHA256: [productionSigningCertificateSHA256]
+        )
+
         static let immortal = Configuration()
 
         private static func normalizedDigest(_ value: String) -> String? {

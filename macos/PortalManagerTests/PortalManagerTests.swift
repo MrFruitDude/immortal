@@ -4014,4 +4014,22 @@ extension PortalManagerTests {
             expected
         )
     }
+
+    @MainActor
+    func testProvisioningSelectionsFailClosedBeforeAnyDeviceWork() {
+        let store = PortalManagerStore(dependencies: .bootstrap())
+
+        store.dispatch(.selectProvisioningArtifact(
+            URL(fileURLWithPath: "/private/tmp/missing-immortal.apk")
+        ))
+        XCTAssertNil(store.provisioningArtifact)
+
+        store.dispatch(.selectProvisioningADB(URL(fileURLWithPath: "/bin/echo")))
+        XCTAssertEqual(store.adbExecutableSelection?.displayName, "echo")
+        store.provisioningDeviceSerialInput = "serial"
+        store.provisioningPortalEndpointInput = "192.168.1.50"
+
+        XCTAssertTrue(store.canStartProvisioning(.fleetAgentEnablementRecovery))
+        XCTAssertFalse(store.canStartProvisioning(.fullUSBProvisioning))
+    }
 }
