@@ -16,6 +16,7 @@ struct ReleaseCandidate: Equatable, Sendable {
 
 enum ReleasePackagingFailure: Error, Equatable, Sendable {
     case appNotReadable
+    case bundleIdentifierMismatch
     case signatureMissing
     case ticketMissingOrInvalid
 }
@@ -24,40 +25,135 @@ protocol ReleasePackagingVerifier: Sendable {
     func verify(_ candidate: ReleaseCandidate) async throws
 }
 
+protocol ReleasePackagingProcessRunner: Sendable {
+    func run(executablePath: String, arguments: [String]) async throws -> Int32
+}
+
+struct FoundationReleasePackagingProcessRunner: ReleasePackagingProcessRunner {
+    func run(executablePath: String, arguments: [String]) async throws -> Int32 {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executablePath)
+        process.arguments = arguments
+        try process.run()
+        process.waitUntilExit()
+        return process.terminationStatus
+    }
+}
+
 struct SystemReleasePackagingVerifier: ReleasePackagingVerifier {
+    static let expectedBundleIdentifier = "com.starbrightlab.portalmanager"
+
+    private let processRunner: any ReleasePackagingProcessRunner
+
+    init(processRunner: any ReleasePackagingProcessRunner = FoundationReleasePackagingProcessRunner()) {
+        self.processRunner = processRunner
+    }
+
     func verify(_ candidate: ReleaseCandidate) async throws {
         var isDirectory: ObjCBool = false
         let fileManager = FileManager.default
         guard !candidate.appPath.isEmpty,
               fileManager.fileExists(atPath: candidate.appPath, isDirectory: &isDirectory),
-              isDirectory.boolValue else {
+              isDirectory.boolValue,
+              URL(fileURLWithPath: candidate.appPath).pathExtension == "app" else {
             throw ReleasePackagingFailure.appNotReadable
         }
 
-        let codesign = Process()
-        codesign.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
-        codesign.arguments = ["--verify", "--strict", "--verbose=2", candidate.appPath]
-        try codesign.run()
-        codesign.waitUntilExit()
-        guard codesign.terminationStatus == 0 else {
-            throw ReleasePackagingFailure.signatureMissing
+        try Self.validateBundleIdentity(appPath: candidate.appPath)
+
+        try await run(
+            processRunner,
+            "/usr/bin/codesign",
+            ["--verify", "--strict", "--verbose=2", candidate.appPath],
+            failure: .signatureMissing
+        )
+        try await run(
+            processRunner,
+            "/usr/sbin/spctl",
+            ["--assess", "--type", "execute", "--verbose=2", candidate.appPath],
+            failure: .signatureMissing
+        )
+
+        guard let ticketPath = candidate.notarizationTicketPath else {
+            throw ReleasePackagingFailure.ticketMissingOrInvalid
         }
 
-        if let ticketPath = candidate.notarizationTicketPath {
-            var unused: ObjCBool = false
-            guard fileManager.fileExists(atPath: ticketPath, isDirectory: &unused) else {
-                throw ReleasePackagingFailure.ticketMissingOrInvalid
-            }
-            let stapler = Process()
-            stapler.executableURL = URL(fileURLWithPath: "/usr/bin/stapler")
-            stapler.arguments = ["validate", candidate.appPath]
-            try stapler.run()
-            stapler.waitUntilExit()
-            guard stapler.terminationStatus == 0 else {
-                throw ReleasePackagingFailure.ticketMissingOrInvalid
-            }
-        } else {
+        var ticketIsDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: ticketPath, isDirectory: &ticketIsDirectory),
+              !ticketIsDirectory.boolValue,
+              fileManager.isReadableFile(atPath: ticketPath) else {
             throw ReleasePackagingFailure.ticketMissingOrInvalid
+        }
+
+        try await run(
+            processRunner,
+            "/usr/bin/stapler",
+            ["validate", candidate.appPath],
+            failure: .ticketMissingOrInvalid
+        )
+    }
+
+    private func run(
+        _ runner: any ReleasePackagingProcessRunner,
+        _ executablePath: String,
+        _ arguments: [String],
+        failure: ReleasePackagingFailure
+    ) async throws {
+        do {
+            guard try await runner.run(executablePath: executablePath, arguments: arguments) == 0 else {
+                throw failure
+            }
+        } catch let failure as ReleasePackagingFailure {
+            throw failure
+        } catch {
+            throw failure
+        }
+    }
+
+    private static func validateBundleIdentity(appPath: String) throws {
+        let infoURL = URL(fileURLWithPath: appPath)
+            .appendingPathComponent("Contents")
+            .appendingPathComponent("Info.plist")
+
+        let data: Data
+        do {
+            data = try Data(contentsOf: infoURL)
+        } catch {
+            throw ReleasePackagingFailure.appNotReadable
+        }
+
+        let plist: Any
+        do {
+            plist = try PropertyListSerialization.propertyList(
+                from: data,
+                options: [],
+                format: nil
+            )
+        } catch {
+            throw ReleasePackagingFailure.appNotReadable
+        }
+
+        guard let values = plist as? [String: Any],
+              let bundleIdentifier = values["CFBundleIdentifier"] as? String,
+              bundleIdentifier == expectedBundleIdentifier else {
+            throw ReleasePackagingFailure.bundleIdentifierMismatch
+        }
+
+        guard let executableName = values["CFBundleExecutable"] as? String else {
+            throw ReleasePackagingFailure.appNotReadable
+        }
+        let executableURL = URL(fileURLWithPath: appPath)
+            .appendingPathComponent("Contents")
+            .appendingPathComponent("MacOS")
+            .appendingPathComponent(executableName)
+        var isExecutableDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(
+                  atPath: executableURL.path,
+                  isDirectory: &isExecutableDirectory
+              ),
+              !isExecutableDirectory.boolValue,
+              FileManager.default.isExecutableFile(atPath: executableURL.path) else {
+            throw ReleasePackagingFailure.appNotReadable
         }
     }
 }

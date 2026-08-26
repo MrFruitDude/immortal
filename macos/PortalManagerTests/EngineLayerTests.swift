@@ -30,6 +30,20 @@ final class EngineLayerTests: XCTestCase {
         }
     }
 
+    private final class ScriptedReleaseProcessRunner: ReleasePackagingProcessRunner, @unchecked Sendable {
+        private(set) var recordedExecutables: [String] = []
+        private var outcomes: [Int32]
+
+        init(exitCodes: [Int32]) {
+            outcomes = exitCodes
+        }
+
+        func run(executablePath: String, arguments: [String]) async throws -> Int32 {
+            recordedExecutables.append((executablePath as NSString).lastPathComponent)
+            return outcomes.isEmpty ? 0 : outcomes.removeFirst()
+        }
+    }
+
     private func makeEndpoint(portalID: PortalID) -> LANEndpoint {
         LANEndpoint(
             hostOrAddress: portalID == self.portalA ? "192.168.1.20" : "192.168.1.21",
@@ -439,6 +453,52 @@ final class EngineLayerTests: XCTestCase {
         XCTAssertTrue(report.withheldClaims.contains { $0.contains("Signed and Notarized Packaging") })
     }
 
+    func testSystemPackagingVerifierRejectsTheWrongBundleBeforeAnyProcess() async throws {
+        let appURL = try Self.makeFixtureApp(bundleIdentifier: "com.example.wrong")
+        defer { try? FileManager.default.removeItem(at: appURL) }
+        let runner = ScriptedReleaseProcessRunner(exitCodes: [])
+        let verifier = SystemReleasePackagingVerifier(processRunner: runner)
+
+        do {
+            try await verifier.verify(Self.candidate(at: appURL))
+        } catch let failure as ReleasePackagingFailure {
+            XCTAssertEqual(failure, .bundleIdentifierMismatch)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        XCTAssertTrue(runner.recordedExecutables.isEmpty)
+    }
+
+    func testSystemPackagingVerifierRunsIdentitySignatureGatekeeperAndStapler() async throws {
+        let appURL = try Self.makeFixtureApp(bundleIdentifier: "com.starbrightlab.portalmanager")
+        defer { try? FileManager.default.removeItem(at: appURL) }
+        let runner = ScriptedReleaseProcessRunner(exitCodes: [0, 0, 0])
+        let verifier = SystemReleasePackagingVerifier(processRunner: runner)
+
+        try await verifier.verify(Self.candidate(at: appURL))
+
+        XCTAssertEqual(runner.recordedExecutables, ["codesign", "spctl", "stapler"])
+    }
+
+    func testSystemPackagingVerifierFailsClosedWhenGatekeeperRejectsCandidate() async throws {
+        let appURL = try Self.makeFixtureApp(bundleIdentifier: "com.starbrightlab.portalmanager")
+        defer { try? FileManager.default.removeItem(at: appURL) }
+        let runner = ScriptedReleaseProcessRunner(exitCodes: [0, 1, 0])
+        let verifier = SystemReleasePackagingVerifier(processRunner: runner)
+
+        do {
+            try await verifier.verify(Self.candidate(at: appURL))
+            XCTFail("A Gatekeeper rejection must fail the release gate.")
+        } catch let failure as ReleasePackagingFailure {
+            XCTAssertEqual(failure, .signatureMissing)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        XCTAssertEqual(runner.recordedExecutables, ["codesign", "spctl"])
+    }
+
     func testPassedPackagingGateUnblocksCoreClaimsWhenOtherGatesPass() {
         let evaluator = ReleaseGateEvaluator()
         let records = evaluator.mandatoryGates.map {
@@ -591,6 +651,48 @@ final class EngineLayerTests: XCTestCase {
         decoder.dateDecodingStrategy = .iso8601
         return decoder
     }()
+
+    private static func candidate(at appURL: URL) -> ReleaseCandidate {
+        ReleaseCandidate(
+            version: "1.0.0",
+            appPath: appURL.path,
+            notarizationTicketPath: appURL
+                .appendingPathComponent("Contents")
+                .appendingPathComponent("notarization.json")
+                .path
+        )
+    }
+
+    private static func makeFixtureApp(bundleIdentifier: String) throws -> URL {
+        let unique = UUID().uuidString
+        let appURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("PortalManager-release-\(unique).app", isDirectory: true)
+        let contentsURL = appURL.appendingPathComponent("Contents", isDirectory: true)
+        let macosURL = contentsURL.appendingPathComponent("MacOS", isDirectory: true)
+        try FileManager.default.createDirectory(at: macosURL, withIntermediateDirectories: true)
+
+        let info = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+          <key>CFBundleIdentifier</key><string>\(bundleIdentifier)</string>
+          <key>CFBundleExecutable</key><string>PortalManager</string>
+        </dict>
+        </plist>
+        """
+        try Data(info.utf8).write(to: contentsURL.appendingPathComponent("Info.plist"))
+        try Data("{\"status\":\"valid\"}".utf8).write(
+            to: contentsURL.appendingPathComponent("notarization.json")
+        )
+        let executableURL = macosURL.appendingPathComponent("PortalManager")
+        try Data("#!/bin/sh\n".utf8).write(to: executableURL)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755],
+            ofItemAtPath: executableURL.path
+        )
+        return appURL
+    }
 
     private static func record(gate: GateID, status: GateStatus) -> ReleaseEvidenceRecord {
         ReleaseEvidenceRecord(
