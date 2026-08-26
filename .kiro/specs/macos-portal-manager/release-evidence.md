@@ -6,8 +6,8 @@ validation that remains before release.
 ## Candidate
 
 - Branch: `feature/portal-manager-hardening`
-- Implementation head: `64dadff`.
-- Standalone Portal Manager mirror head: `de4ab19`.
+- Implementation head: `e9b32c1`.
+- Standalone Portal Manager mirror head: `77bc720`.
 - Base: `ae46e16` (`v1.73`)
 - Android Release APK: `app/build/outputs/apk/release/app-release.apk`
   Built artifact SHA-256 at validation:
@@ -30,9 +30,12 @@ validation that remains before release.
 - Background Service Cargo tests: pass (7 tests, locked), including a real-process
   readiness and clean `SIGTERM` shutdown check.
 - Portal Manager scope check: pass.
-- Portal Manager direct XCTest bridge: pass (188 tests), including fail-closed
-  provisioning selection, release-report export, and release-verifier identity,
-  Gatekeeper, notarization, and stapler checks.
+- Portal Manager direct XCTest bridge: pass (190 tests), including fail-closed
+  provisioning selection/targeting, release-report export, and release-verifier
+  identity, Gatekeeper, notarization, and stapler checks.
+- USB provisioning now resolves an explicit target from the entered serial:
+  recovery requires exactly one registered match, full provisioning updates the
+  exact match or creates a new target, and ambiguous serials fail closed.
 - Sanitized machine-readable release reports export as sorted JSON; a new test
   verifies missing gates remain withheld while passed mandatory gates publish
   exactly the supported claims.
@@ -44,9 +47,9 @@ validation that remains before release.
 - Workflow YAML parse: pass.
 - CI now includes macOS scope/build/tests, Rust tests, and Android unit tests.
   Upstream PR [starbrightlab/immortal#224](https://github.com/starbrightlab/immortal/pull/224)
-  is clean and mergeable at implementation head `64dadff`; its
+  is clean and mergeable at implementation head `e9b32c1`; its
   `portal-manager`, `rust-tests`, `unit-tests`, and `version-sync` checks all
-  pass in workflow runs `32936728468` and `32936728464`.
+  pass in workflow runs `32938873633` and `32938873543`.
   Signed Release packaging remains a local
   gate because public runners do not have the protected signing key.
 
