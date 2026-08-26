@@ -369,6 +369,9 @@ struct PortalOverviewPane: View {
             ) {
                 store.dispatch(.stageAppSync(app.packageName))
             }
+                .accessibilityIdentifier("app.sync.\(app.packageName)")
+                .accessibilityLabel("Sync \(app.name) across Portals")
+                .accessibilityHint("Choose the ready Portals that should receive this app.")
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(PortalTheme.well))
@@ -409,6 +412,9 @@ struct PortalOverviewPane: View {
                             }
                         }
                         .toggleStyle(.checkbox)
+                        .accessibilityIdentifier("app.sync.target.\(portal.portalID.rawValue.uuidString)")
+                        .accessibilityLabel("Sync to \(portal.name), \(portal.stateTitle)")
+                        .accessibilityValue(portal.isEligible ? "Eligible" : "Not eligible")
                     }
                 }
                 .padding(10)
@@ -423,9 +429,14 @@ struct PortalOverviewPane: View {
                 ) {
                     store.dispatch(.confirmAppSync)
                 }
+                    .accessibilityIdentifier("app.sync.confirm")
+                    .accessibilityLabel("Sync app now")
+
                 GhostButton(title: "Cancel", systemImage: "xmark") {
                     store.dispatch(.cancelAppSync)
                 }
+                    .accessibilityIdentifier("app.sync.cancel")
+                    .accessibilityLabel("Cancel app sync")
             }
         }
         .padding(12)

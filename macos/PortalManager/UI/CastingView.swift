@@ -125,8 +125,14 @@ struct CastingView: View {
                     TextField("https://media.local/movie.mp4", text: $mediaSourceText)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 12.5, design: .monospaced))
+                        .accessibilityIdentifier("casting.media.source")
+                        .accessibilityLabel("Media address")
+                        .accessibilityHint("Enter an HTTPS URL hosted on your local network.")
+
                     TextField("Title", text: $mediaTitleText)
                         .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("casting.media.title")
+                        .accessibilityLabel("Media title")
 
                     HStack(spacing: 12) {
                         PrimaryButton(
@@ -136,6 +142,8 @@ struct CastingView: View {
                         ) {
                             play(target)
                         }
+                            .accessibilityIdentifier("casting.media.play")
+                            .accessibilityLabel("Play on \(target.name)")
 
                         GhostButton(
                             title: "Stop",
@@ -144,6 +152,8 @@ struct CastingView: View {
                         ) {
                             onStop?(target.id)
                         }
+                            .accessibilityIdentifier("casting.media.stop")
+                            .accessibilityLabel("Stop playback on \(target.name)")
                     }
 
                     if let playbackMessage {

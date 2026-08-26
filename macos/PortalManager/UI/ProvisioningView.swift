@@ -77,6 +77,9 @@ struct ProvisioningView: View {
                     ) {
                         isSelectingADB = true
                     }
+                        .accessibilityIdentifier("provisioning.select.adb")
+                        .accessibilityLabel(store.adbExecutableSelection == nil ? "Choose ADB executable" : "Change ADB executable")
+                        .accessibilityHint("Select the local adb program provided by your platform tools.")
                     if let adbName = store.adbExecutableSelection?.displayName {
                         Text(adbName)
                             .font(.system(size: 12, weight: .medium))
@@ -93,10 +96,16 @@ struct ProvisioningView: View {
                     ) {
                         isSelectingArtifact = true
                     }
+                        .accessibilityIdentifier("provisioning.select.artifact")
+                        .accessibilityLabel(store.provisioningArtifact == nil ? "Choose local APK" : "Change local APK")
+                        .accessibilityHint("Select a signed Immortal Release APK stored on this Mac.")
+
                     if store.provisioningArtifact != nil {
                         GhostButton(title: "Clear", systemImage: "xmark", disabled: store.provisioningState.isRunning) {
                             store.clearProvisioningArtifact()
                         }
+                            .accessibilityIdentifier("provisioning.clear.artifact")
+                            .accessibilityLabel("Clear selected APK")
                     }
                 }
 

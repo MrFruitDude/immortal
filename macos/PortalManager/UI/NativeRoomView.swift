@@ -47,6 +47,9 @@ struct NativeRoomView: View {
                 }
                 .pickerStyle(.menu)
                 .disabled(isRunning)
+                .accessibilityIdentifier("roomlink.source")
+                .accessibilityLabel("Source room")
+                .accessibilityHint("Choose the Portal whose audio will play in receiving rooms.")
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Receiving rooms")
@@ -64,6 +67,9 @@ struct NativeRoomView: View {
                         }
                         .toggleStyle(.checkbox)
                         .disabled(isRunning)
+                        .accessibilityIdentifier("roomlink.receiver.\(portal.portalID.rawValue.uuidString)")
+                        .accessibilityLabel("Use \(portal.name) as a receiving room")
+                        .accessibilityValue(isSelected(portal) ? "Selected" : "Not selected")
                     }
                 }
 
@@ -81,6 +87,9 @@ struct NativeRoomView: View {
                     ) {
                         onConnect()
                     }
+                        .accessibilityIdentifier("roomlink.connect")
+                        .accessibilityLabel("Set up selected rooms")
+
                     GhostButton(
                         title: "Stop Rooms",
                         systemImage: "stop.circle",
@@ -88,9 +97,14 @@ struct NativeRoomView: View {
                     ) {
                         onStop()
                     }
+                        .accessibilityIdentifier("roomlink.stop")
+                        .accessibilityLabel("Stop selected rooms")
+
                     GhostButton(title: "Check Setup", systemImage: "checklist") {
                         onPrepare()
                     }
+                        .accessibilityIdentifier("roomlink.check")
+                        .accessibilityLabel("Check Room Link setup")
                 }
 
                 if let report {
@@ -131,6 +145,10 @@ struct NativeRoomView: View {
                 }
             }
         )
+    }
+
+    private func isSelected(_ portal: NativeRoomPortalRow) -> Bool {
+        selectedReceiverIDs.contains(portal.portalID)
     }
 
     private func resultSection(_ report: NativeRoomApplyReport) -> some View {
