@@ -74,9 +74,16 @@ run_unit_tests_directly() {
     -disableAutomaticPackageResolution \
     build-for-testing
 
-  local app_path
-  app_path="$(find "$HOME/Library/Developer/Xcode/DerivedData" -type d -path "*/Build/Products/$CONFIGURATION/PortalManager.app" -print -quit)" \
-    || fail "unable to locate the built PortalManager app."
+  local built_products_dir app_path
+  built_products_dir="$("$XCODEBUILD" \
+    -project "$PROJECT" \
+    -scheme "$SCHEME" \
+    -configuration "$CONFIGURATION" \
+    -destination "$DESTINATION" \
+    -disableAutomaticPackageResolution \
+    -showBuildSettings 2>/dev/null | awk -F ' = ' '$1 == "    BUILT_PRODUCTS_DIR" { print $2; exit }')" \
+    || fail "unable to locate the built PortalManager products."
+  app_path="$built_products_dir/PortalManager.app"
   [[ -n "$app_path" ]] || fail "PortalManager.app was not produced by build-for-testing."
 
   local test_bundle="$app_path/Contents/PlugIns/PortalManagerTests.xctest"
