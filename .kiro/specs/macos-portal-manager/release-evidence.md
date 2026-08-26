@@ -35,10 +35,9 @@ validation that remains before release.
 - Workflow YAML parse: pass.
 - CI now includes macOS scope/build/tests, Rust tests, and Android unit tests.
   Upstream PR [starbrightlab/immortal#224](https://github.com/starbrightlab/immortal/pull/224)
-  was clean and mergeable at `3b59420`; its `portal-manager`, `rust-tests`,
-  `unit-tests`, and `version-sync` checks all passed in workflow runs
-  `32927394996` and `32927394938`. The current `bcb47d7` candidate has local
-  scope/build/test proof; refreshed upstream checks are pending push.
+  is clean and mergeable at implementation head `bcb47d7`; its
+  `portal-manager`, `rust-tests`, `unit-tests`, and `version-sync` checks all
+  pass in workflow runs `32930569745` and `32930569805`.
   Signed Release packaging remains a local
   gate because public runners do not have the protected signing key.
 
