@@ -6,7 +6,7 @@ validation that remains before release.
 ## Candidate
 
 - Branch: `feature/portal-manager-hardening`
-- Implementation head: `2c0ea0d` (later commits are evidence-only).
+- Implementation head: `dd4aa28`.
 - Base: `ae46e16` (`v1.73`)
 - Android Release APK: `app/build/outputs/apk/release/app-release.apk`
   Built artifact SHA-256 at validation:
@@ -33,9 +33,9 @@ validation that remains before release.
 - Workflow YAML parse: pass.
 - CI now includes macOS scope/build/tests, Rust tests, and Android unit tests.
   Upstream PR [starbrightlab/immortal#224](https://github.com/starbrightlab/immortal/pull/224)
-  is clean and mergeable at `2c0ea0d`; its `portal-manager`, `rust-tests`,
+  is clean and mergeable at `dd4aa28`; its `portal-manager`, `rust-tests`,
   `unit-tests`, and `version-sync` checks all pass in workflow runs
-  `32908260198` and `32908260199`. Signed Release packaging remains a local
+  `32925368785` and `32925368637`. Signed Release packaging remains a local
   gate because public runners do not have the protected signing key.
 
 ## Live Fleet baseline
