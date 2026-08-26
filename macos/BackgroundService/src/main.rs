@@ -103,6 +103,11 @@ impl ConnectionTracker {
                 .expect("connection count poisoned");
         }
     }
+
+    #[cfg(test)]
+    fn active_count(&self) -> usize {
+        *self.active_count.lock().expect("connection count poisoned")
+    }
 }
 
 struct ConnectionGuard {
@@ -522,5 +527,30 @@ mod tests {
         let request = read_request(&mut request_bytes).expect("request parses");
         assert_eq!(request.method, "POST");
         assert_eq!(request.target, "/healthz");
+    }
+
+    #[test]
+    fn connection_tracker_waits_for_active_request_before_shutdown() {
+        let tracker = Arc::new(ConnectionTracker::new());
+        let guard = ConnectionGuard {
+            tracker: Arc::clone(&tracker),
+        };
+        assert!(tracker.acquire());
+        assert_eq!(tracker.active_count(), 1);
+
+        let drain_waiter = thread::spawn({
+            let tracker = Arc::clone(&tracker);
+            move || tracker.wait_until_idle()
+        });
+        thread::sleep(Duration::from_millis(25));
+        assert!(
+            !drain_waiter.is_finished(),
+            "shutdown must wait for the accepted worker"
+        );
+
+        drop(guard);
+
+        drain_waiter.join().expect("drain waiter joins");
+        assert_eq!(tracker.active_count(), 0);
     }
 }
