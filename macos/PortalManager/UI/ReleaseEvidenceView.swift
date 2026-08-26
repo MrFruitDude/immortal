@@ -42,12 +42,26 @@ struct ReleaseEvidenceView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Release")
-                .font(.pmDisplay(26))
-            Text("Version-one support claims are backed by typed validation evidence — nothing is claimed without a passed gate.")
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Release")
+                    .font(.pmDisplay(26))
+                Text("Version-one support claims are backed by typed validation evidence — nothing is claimed without a passed gate.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            GhostButton(
+                title: "Copy Report",
+                systemImage: "doc.text",
+                disabled: store.evidenceReport == nil
+            ) {
+                store.dispatch(.copyReleaseReport)
+            }
+            .accessibilityLabel("Copy sanitized release report")
+            .accessibilityHint("Copies a machine-readable summary of passed and withheld release gates.")
         }
     }
 

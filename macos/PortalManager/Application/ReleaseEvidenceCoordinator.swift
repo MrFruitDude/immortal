@@ -231,6 +231,26 @@ actor ReleaseEvidenceCoordinator {
         )
     }
 
+    /// Emits the evaluator's stable machine-readable projection for CI,
+    /// release automation, and operator review. Evidence records remain typed
+    /// and sanitized; raw protocol, path, process, or credential text cannot
+    /// enter this report.
+    func reportData(
+        candidateVersion: String,
+        claimsPortalTVSupport: Bool,
+        enabledMusicMutations: [GateID]
+    ) async throws -> Data {
+        let report = try await report(
+            candidateVersion: candidateVersion,
+            claimsPortalTVSupport: claimsPortalTVSupport,
+            enabledMusicMutations: enabledMusicMutations
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return try encoder.encode(report)
+    }
+
     /// Convenience used by the release-evidence detail view.
     func statuses(candidateVersion: String) async throws -> [(gate: GateID, status: GateStatus)] {
         let records = try await store.records(candidateVersion: candidateVersion)
