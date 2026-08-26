@@ -17,7 +17,7 @@ The port can also come from the environment:
 PORTAL_MANAGER_SERVICE_PORT=1789 ./target/debug/portal-manager-background
 ```
 
-The CLI form takes precedence over `PORTAL_MANAGER_SERVICE_PORT`. Port `0` is rejected so the selected endpoint remains explicit. Run `cargo test` for unit coverage of argument parsing, routing, request parsing, and the health payload.
+The CLI form takes precedence over `PORTAL_MANAGER_SERVICE_PORT`. Port `0` is rejected so the selected endpoint remains explicit. Run `cargo test` for argument, routing, request, and health-payload coverage plus a real-process lifecycle check that polls readiness and verifies clean `SIGTERM` shutdown.
 
 ## API Contract
 
