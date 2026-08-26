@@ -584,29 +584,30 @@ struct FoundationBackgroundServiceHealthChecker: BackgroundServiceHealthChecker 
         request.httpMethod = "GET"
         request.cachePolicy = .reloadIgnoringLocalCacheData
 
-        let data: Data
-        let response: URLResponse
         do {
-            (data, response) = try await session.data(for: request)
+            // Ephemeral sessions are operation-local. Invalidating them here
+            // keeps frequent readiness polling from accumulating sessions.
+            defer { session.finishTasksAndInvalidate() }
+            let (data, response) = try await session.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200,
+                  httpResponse.url?.host == "127.0.0.1",
+                  httpResponse.url?.port == Int(port),
+                  let payload = try? JSONDecoder().decode(HealthPayload.self, from: data),
+                  payload.ok,
+                  payload.service == "portal-manager-background" else {
+                throw BackgroundServiceError.healthCheckFailed
+            }
+
+            return BackgroundServiceHealthSnapshot(
+                processID: payload.pid,
+                version: payload.version,
+                startedAtUnixMs: payload.startedAtUnixMs
+            )
         } catch {
             throw BackgroundServiceError.healthCheckFailed
         }
-
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200,
-              httpResponse.url?.host == "127.0.0.1",
-              httpResponse.url?.port == Int(port),
-              let payload = try? JSONDecoder().decode(HealthPayload.self, from: data),
-              payload.ok,
-              payload.service == "portal-manager-background" else {
-            throw BackgroundServiceError.healthCheckFailed
-        }
-
-        return BackgroundServiceHealthSnapshot(
-            processID: payload.pid,
-            version: payload.version,
-            startedAtUnixMs: payload.startedAtUnixMs
-        )
     }
 
     private struct HealthPayload: Decodable {
