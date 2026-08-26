@@ -44,11 +44,11 @@ Refreshed on 2026-08-25 over local LAN with authenticated Fleet requests.
 mDNS found all three `_immortal-remote._tcp` services. ADB reported no USB
 devices.
 
-| Device | Serial | Endpoint | Result |
-|---|---|---|---|
-| Portal Mini | `819LCM01Z09E4D12` | `10.0.0.245:8723` | Authenticated; API 29; Immortal 1.73 (67); install mode dialog; present. |
-| Portal Mini 2 | `819LCM02Z100PQ21` | `10.0.0.164:8723` | Registered token rejected (`unauthorized`). |
-| Portal Plus | `818PGA02P113KS20` | `10.0.0.151:8723` | Authenticated; API 28; Immortal 1.60 (54); paused legacy installer; absent. |
+| Device alias | Result |
+|---|---|
+| Portal Mini A | Authenticated; API 29; Immortal 1.73 (67); install mode dialog; present. |
+| Portal Mini B | Registered token rejected (`unauthorized`). |
+| Portal Plus A | Authenticated; API 28; Immortal 1.60 (54); paused legacy installer; absent. |
 
 Both authenticated devices returned `not_found` for `GET /apps/profile`, which
 is the expected baseline because they have not received the candidate build.
@@ -61,18 +61,16 @@ root filesystem was 95% used and userdata was 48% used.
 On 2026-08-24, local Bonjour discovery found usable receiver candidates on
 interface 14:
 
-- AirPlay: `Simon's Fire TV`, TCL model `55QM64L`, endpoint
-  `localhost.local.:7000`.
-- Chromecast: Google Home service ending `fdd35`, endpoint port `8009`,
-  friendly name `Kitchen speaker`.
+- AirPlay: one television receiver.
+- Chromecast: one speaker receiver.
 
 These are discovery targets only. They are not playback proof.
 
-A 2026-08-25 read-only refresh again found the Chromecast service ending
-`fdd35`, plus additional Cast receivers and a Cast group. It did not find the
-previously recorded Fire TV under `_airplay._tcp`; it found `Simon's Mac mini`
-and `Simon's MacBook Pro` instead. Receiver visibility changes do not provide
-playback proof, and no connection or playback was started during discovery.
+A 2026-08-25 read-only refresh again found the same Chromecast speaker, plus
+additional Cast receivers and a Cast group. It did not find the previously
+recorded television under `_airplay._tcp`; it found two computer receivers
+instead. Receiver visibility changes do not provide playback proof, and no
+connection or playback was started during discovery.
 
 ## Required live workflow evidence
 
