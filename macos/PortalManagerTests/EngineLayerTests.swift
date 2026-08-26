@@ -390,6 +390,42 @@ final class EngineLayerTests: XCTestCase {
         XCTAssertEqual(records, [])
     }
 
+    func testReleaseReportDataIsMachineReadableAndTruthfulAboutMissingGates() async throws {
+        let store = InMemoryReleaseEvidenceStore()
+        let coordinator = ReleaseEvidenceCoordinator(
+            store: store,
+            clock: FakeManagerClock(),
+            packagingVerifier: StubReleasePackagingVerifier(result: .success(()))
+        )
+
+        do {
+            let data = try await coordinator.reportData(
+                candidateVersion: "1.0.0",
+                claimsPortalTVSupport: false,
+                enabledMusicMutations: []
+            )
+            let report = try Self.decoder.decode(ReleaseGateReport.self, from: data)
+            XCTAssertTrue(report.publishableClaims.isEmpty)
+            XCTAssertEqual(report.withheldClaims.count, ReleaseGateEvaluator().mandatoryGates.count)
+        } catch {
+            XCTFail("A missing-gate report must still export safely: \(error)")
+        }
+
+        for gateID in ReleaseGateEvaluator().mandatoryGates {
+            try await coordinator.record(Self.record(gate: gateID, status: .passed))
+        }
+
+        let data = try await coordinator.reportData(
+            candidateVersion: "1.0.0",
+            claimsPortalTVSupport: false,
+            enabledMusicMutations: []
+        )
+        let report = try Self.decoder.decode(ReleaseGateReport.self, from: data)
+        XCTAssertEqual(report.publishableClaims.count, ReleaseClaim.allCases.count)
+        XCTAssertTrue(report.withheldClaims.isEmpty)
+        XCTAssertEqual(report.statusByGate["packaging"], GateStatus.passed.rawValue)
+    }
+
     func testPackagingGateIsMandatoryForEveryReleaseClaim() {
         let evaluator = ReleaseGateEvaluator()
         XCTAssertTrue(evaluator.mandatoryGates.contains(.packaging))
@@ -549,6 +585,12 @@ final class EngineLayerTests: XCTestCase {
     }
 
     // MARK: Helpers
+
+    private static let decoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }()
 
     private static func record(gate: GateID, status: GateStatus) -> ReleaseEvidenceRecord {
         ReleaseEvidenceRecord(

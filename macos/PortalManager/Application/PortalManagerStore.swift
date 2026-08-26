@@ -6,6 +6,7 @@
  */
 
 import Combine
+import AppKit
 import Foundation
 import SwiftUI
 
@@ -143,6 +144,7 @@ enum PortalManagerIntent: Equatable, Sendable {
     case selectProvisioningArtifact(URL)
     case startProvisioning(ProvisioningMode)
     case cancelProvisioning
+    case copyReleaseReport
     case cancel
 }
 
@@ -467,6 +469,8 @@ final class PortalManagerStore: ObservableObject {
             }
         case .cancelProvisioning:
             cancelProvisioning()
+        case .copyReleaseReport:
+            Task { await copyReleaseReport() }
         case .cancel:
             Task { await cancelActiveOperation() }
         }
@@ -1762,6 +1766,30 @@ final class PortalManagerStore: ObservableObject {
             enabledMusicMutations: []
         ) else { return }
         evidenceReport = report
+    }
+
+    private func copyReleaseReport() async {
+        guard let report = evidenceReport else {
+            statusMessage = "The release report is not ready yet."
+            return
+        }
+
+        do {
+            let data = try await evidenceCoordinator.reportData(
+                candidateVersion: report.candidateVersion,
+                claimsPortalTVSupport: false,
+                enabledMusicMutations: []
+            )
+            let text = String(decoding: data, as: UTF8.self)
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            guard pasteboard.setString(text, forType: .string) else {
+                throw ManagerError.validation(field: "report", reason: "clipboard unavailable")
+            }
+            statusMessage = "Sanitized release report copied."
+        } catch {
+            statusMessage = "The release report could not be copied."
+        }
     }
 
     // MARK: Helpers
