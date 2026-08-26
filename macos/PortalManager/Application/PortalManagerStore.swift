@@ -187,6 +187,11 @@ struct CastingPlaybackCommand: Equatable, Sendable {
     }
 }
 
+enum ProvisioningTargetError: Error, Equatable {
+    case registeredPortalRequired
+    case ambiguousSerial
+}
+
 // MARK: - Store
 
 /// The main-actor-facing application store. It owns sanitized, non-secret UI
@@ -482,6 +487,11 @@ final class PortalManagerStore: ObservableObject {
         guard !provisioningState.isRunning,
               let adbExecutableSelection,
               adbExecutableSelection.isSafeSelection,
+              (try? Self.provisioningTargetID(
+                  for: mode,
+                  serial: provisioningDeviceSerialInput,
+                  entries: entries
+              )) != nil,
               !provisioningDeviceSerialInput
                   .trimmingCharacters(in: .whitespacesAndNewlines)
                   .isEmpty,
@@ -564,7 +574,22 @@ final class PortalManagerStore: ObservableObject {
 
         let friendlyName = provisioningFriendlyNameInput
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let portalID = selectedPortalID ?? PortalID()
+        let portalID: PortalID
+        do {
+            portalID = try Self.provisioningTargetID(
+                for: mode,
+                serial: provisioningDeviceSerialInput,
+                entries: entries
+            )
+        } catch let error as ProvisioningTargetError {
+            provisioningState.statusMessage = error == .registeredPortalRequired
+                ? "Recovery requires the USB serial to match a registered Portal."
+                : "The entered USB serial matches more than one Portal."
+            return
+        } catch {
+            provisioningState.statusMessage = "The provisioning target could not be resolved."
+            return
+        }
         let runner = ProcessADBRunner(executable: adbExecutableSelection)
         let artifactVerifier = LocalArtifactVerifier(
             configuration: .immortalProduction
@@ -698,6 +723,30 @@ final class PortalManagerStore: ObservableObject {
     private func releaseSecurityScope(_ url: URL) {
         guard retainedSecurityScopedURLs.remove(url) != nil else { return }
         url.stopAccessingSecurityScopedResource()
+    }
+
+    nonisolated static func provisioningTargetID(
+        for mode: ProvisioningMode,
+        serial: String,
+        entries: [PortalRegistryEntry]
+    ) throws -> PortalID {
+        let normalizedSerial = serial.trimmingCharacters(in: .whitespacesAndNewlines)
+        let matchingEntries = entries.filter { entry in
+            entry.identity?.serial?.caseInsensitiveCompare(normalizedSerial) == .orderedSame
+        }
+
+        switch mode {
+        case .fleetAgentEnablementRecovery:
+            guard matchingEntries.count == 1, let match = matchingEntries.first else {
+                throw ProvisioningTargetError.registeredPortalRequired
+            }
+            return match.id
+        case .fullUSBProvisioning:
+            guard matchingEntries.count <= 1 else {
+                throw ProvisioningTargetError.ambiguousSerial
+            }
+            return matchingEntries.first?.id ?? PortalID()
+        }
     }
 
     func navigate(to destination: SidebarDestination) {
