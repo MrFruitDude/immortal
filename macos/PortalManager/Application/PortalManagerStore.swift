@@ -139,7 +139,40 @@ enum PortalManagerIntent: Equatable, Sendable {
     case cancelAppSync
     case portalMedia(MediaTransportAction)
     case portalVolume(VolumeDirection)
+    case selectProvisioningADB(URL)
+    case selectProvisioningArtifact(URL)
+    case startProvisioning(ProvisioningMode)
+    case cancelProvisioning
     case cancel
+}
+
+struct ProvisioningWorkflowState: Equatable, Sendable {
+    var isRunning = false
+    var progress = ProvisioningProgress(
+        mode: .fleetAgentEnablementRecovery,
+        step: .preflight,
+        completedStepCount: 0,
+        totalStepCount: 0
+    )
+    var currentStep: ProvisioningStepID?
+    var statusMessage: String?
+
+    static func idle() -> Self { Self() }
+}
+
+private struct ClosureProvisioningEventSink: ProvisioningCoordinatorEventSink {
+    let handler: @Sendable (ProvisioningEvent) async -> Void
+
+    func record(_ event: ProvisioningEvent) async {
+        await handler(event)
+    }
+}
+
+private extension ProvisioningEvent {
+    var progressValue: ProvisioningProgress? {
+        if case .progress(let progress) = self { return progress }
+        return nil
+    }
 }
 
 struct CastingPlaybackCommand: Equatable, Sendable {
@@ -237,6 +270,16 @@ final class PortalManagerStore: ObservableObject {
 
     // Release evidence.
     @Published private(set) var evidenceReport: ReleaseGateReport?
+
+    // USB provisioning.
+    @Published private(set) var adbExecutableSelection: LocalExecutableReference?
+    @Published private(set) var provisioningArtifact: LocalArtifact?
+    @Published private(set) var provisioningState = ProvisioningWorkflowState.idle()
+    @Published var provisioningDeviceSerialInput = ""
+    @Published var provisioningFriendlyNameInput = ""
+    @Published var provisioningPortalEndpointInput = ""
+    private var provisioningTask: Task<Void, Never>?
+    private var retainedSecurityScopedURLs: Set<URL> = []
 
     private lazy var registryCoordinator = PortalRegistryCoordinator(
         registryStore: dependencies.registry,
@@ -414,9 +457,243 @@ final class PortalManagerStore: ObservableObject {
             Task { await sendPortalMedia(action) }
         case .portalVolume(let direction):
             Task { await sendPortalVolume(direction) }
+        case .selectProvisioningADB(let url):
+            selectProvisioningADB(url)
+        case .selectProvisioningArtifact(let url):
+            selectProvisioningArtifact(url)
+        case .startProvisioning(let mode):
+            provisioningTask = Task { [weak self] in
+                await self?.startProvisioning(mode)
+            }
+        case .cancelProvisioning:
+            cancelProvisioning()
         case .cancel:
             Task { await cancelActiveOperation() }
         }
+    }
+
+    // MARK: Provisioning
+
+    func canStartProvisioning(_ mode: ProvisioningMode) -> Bool {
+        guard !provisioningState.isRunning,
+              let adbExecutableSelection,
+              adbExecutableSelection.isSafeSelection,
+              !provisioningDeviceSerialInput
+                  .trimmingCharacters(in: .whitespacesAndNewlines)
+                  .isEmpty,
+              !provisioningPortalEndpointInput
+                  .trimmingCharacters(in: .whitespacesAndNewlines)
+                  .isEmpty else {
+            return false
+        }
+
+        if mode == .fullUSBProvisioning {
+            return provisioningArtifact?.isSafeSelection == true
+        }
+        return true
+    }
+
+    func selectProvisioningADB(_ url: URL) {
+        guard !provisioningState.isRunning else { return }
+        let reference = LocalExecutableReference(url: url)
+        guard reference.isSafeSelection, FileManager.default.isExecutableFile(atPath: url.path) else {
+            provisioningState.statusMessage = "Choose a readable ADB executable."
+            return
+        }
+
+        if let previousURL = adbExecutableSelection?.securityScopedURL {
+            releaseSecurityScope(previousURL)
+        }
+        retainSecurityScope(url)
+        adbExecutableSelection = reference
+        provisioningState.statusMessage = "ADB executable selected."
+    }
+
+    func selectProvisioningArtifact(_ url: URL) {
+        guard !provisioningState.isRunning else { return }
+        let artifact = LocalArtifact(
+            url: url,
+            expectedPackageIdentity: "com.immortal.launcher",
+            expectedSignaturePolicy: .certificateSHA256(
+                LocalArtifactVerifier.Configuration.productionSigningCertificateSHA256
+            )
+        )
+        var isDirectory: ObjCBool = false
+        guard artifact.isSafeSelection,
+              FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+              !isDirectory.boolValue,
+              FileManager.default.isReadableFile(atPath: url.path) else {
+            provisioningState.statusMessage = "Choose a local Immortal APK."
+            return
+        }
+
+        releaseArtifactSelection()
+        retainSecurityScope(url)
+        provisioningArtifact = artifact
+        provisioningState.statusMessage = "Local artifact selected for verification."
+    }
+
+    func clearProvisioningArtifact() {
+        guard !provisioningState.isRunning else { return }
+        releaseArtifactSelection()
+        provisioningState.statusMessage = "Local artifact cleared."
+    }
+
+    func cancelProvisioning() {
+        guard provisioningState.isRunning else { return }
+        provisioningTask?.cancel()
+        provisioningState.statusMessage = "Cancelling provisioning..."
+    }
+
+    private func startProvisioning(_ mode: ProvisioningMode) async {
+        guard canStartProvisioning(mode), let adbExecutableSelection else { return }
+        guard let admissionRequest = try? ConnectionAdmissionRequest(
+            rawEndpoint: provisioningPortalEndpointInput.trimmingCharacters(in: .whitespacesAndNewlines),
+            serviceKind: .portal,
+            protocolName: "http",
+            defaultPort: LANEndpoint.defaultPortalAgentPort,
+            source: .provisioning
+        ) else {
+            provisioningState.statusMessage = "Enter a private Portal address."
+            return
+        }
+
+        let friendlyName = provisioningFriendlyNameInput
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let portalID = selectedPortalID ?? PortalID()
+        let runner = ProcessADBRunner(executable: adbExecutableSelection)
+        let artifactVerifier = LocalArtifactVerifier(
+            configuration: .immortalProduction
+        )
+        let sink = ClosureProvisioningEventSink { [weak self] event in
+            await self?.handleProvisioningEvent(event)
+        }
+        let coordinator = ProvisioningCoordinator(
+            adb: runner,
+            artifactVerifier: artifactVerifier,
+            workspaceFactory: dependencies.provisioningWorkspace,
+            connectionAdmission: ConnectionAdmission(
+                dnsResolver: dependencies.dns,
+                trustWarningStore: dependencies.trustWarnings
+            ),
+            fleetTransport: dependencies.fleetHTTP,
+            credentialStore: dependencies.keychain,
+            registryCoordinator: registryCoordinator,
+            clock: dependencies.clock,
+            eventSink: sink
+        )
+
+        provisioningState = ProvisioningWorkflowState(
+            isRunning: true,
+            progress: ProvisioningProgress(
+                mode: mode,
+                step: .preflight,
+                completedStepCount: 0,
+                totalStepCount: mode.expectedSteps.count
+            ),
+            currentStep: .preflight,
+            statusMessage: "Starting provisioning..."
+        )
+
+        do {
+            let result: ProvisioningResult
+            switch mode {
+            case .fleetAgentEnablementRecovery:
+                result = try await coordinator.provision(
+                    EnablementRecoveryPlan(
+                        deviceSerial: provisioningDeviceSerialInput,
+                        adbExecutable: adbExecutableSelection,
+                        friendlyName: friendlyName.isEmpty ? nil : friendlyName
+                    ),
+                    portalID: portalID,
+                    endpoint: admissionRequest
+                )
+            case .fullUSBProvisioning:
+                guard let provisioningArtifact else { return }
+                result = try await coordinator.provision(
+                    FullUSBProvisioningPlan(
+                        deviceSerial: provisioningDeviceSerialInput,
+                        adbExecutable: adbExecutableSelection,
+                        localArtifact: provisioningArtifact,
+                        friendlyName: friendlyName.isEmpty ? nil : friendlyName
+                    ),
+                    portalID: portalID,
+                    endpoint: admissionRequest
+                )
+            }
+
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
+                upsert(entry: result.entry)
+                selectedPortalID = result.portalID
+            }
+            provisioningState.statusMessage = "Portal verified and saved."
+        } catch is CancellationError {
+            provisioningState.statusMessage = "Provisioning cancelled."
+        } catch let failure as ProvisioningFailure {
+            provisioningState.statusMessage = failure.sanitizedMessage
+        } catch {
+            provisioningState.statusMessage = "The provisioning operation was rejected."
+        }
+
+        finishProvisioning()
+    }
+
+    private func handleProvisioningEvent(_ event: ProvisioningEvent) async {
+        if let progress = event.progressValue {
+            provisioningState.progress = progress
+        }
+        if let step = event.step {
+            provisioningState.currentStep = step
+        }
+
+        switch event {
+        case .preflightCompleted:
+            provisioningState.statusMessage = "USB device preflight passed."
+        case .artifactVerificationCompleted:
+            provisioningState.statusMessage = "Artifact verification passed."
+        case .agentManifestRecovered:
+            provisioningState.statusMessage = "Fleet Agent manifest recovered; verifying over LAN."
+        case .completed:
+            break
+        case .cancelled:
+            provisioningState.statusMessage = "Provisioning cancelled."
+        case .failed(let failure):
+            provisioningState.statusMessage = failure.sanitizedMessage
+        case .started, .stepStarted, .stepCompleted, .progress:
+            break
+        }
+    }
+
+    private func finishProvisioning() {
+        provisioningTask = nil
+        provisioningState.isRunning = false
+        provisioningState.currentStep = nil
+    }
+
+    private func retainSecurityScope(_ url: URL) {
+        if url.startAccessingSecurityScopedResource() {
+            retainedSecurityScopedURLs.insert(url)
+        }
+    }
+
+    private func releaseArtifactSelection() {
+        if let url = provisioningArtifact?.securityScopedURL {
+            releaseSecurityScope(url)
+        }
+        provisioningArtifact = nil
+    }
+
+    private func releaseProvisioningSelections() {
+        if let url = adbExecutableSelection?.securityScopedURL {
+            releaseSecurityScope(url)
+        }
+        adbExecutableSelection = nil
+        releaseArtifactSelection()
+    }
+
+    private func releaseSecurityScope(_ url: URL) {
+        guard retainedSecurityScopedURLs.remove(url) != nil else { return }
+        url.stopAccessingSecurityScopedResource()
     }
 
     func navigate(to destination: SidebarDestination) {

@@ -6,10 +6,13 @@
  */
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// USB provisioning workspace: prerequisites, both modes, and step progress.
 struct ProvisioningView: View {
     @EnvironmentObject var store: PortalManagerStore
+    @State private var isSelectingADB = false
+    @State private var isSelectingArtifact = false
 
     var body: some View {
         ScrollView {
@@ -23,6 +26,22 @@ struct ProvisioningView: View {
             .padding(.top, 22)
         }
         .navigationTitle("")
+        .fileImporter(
+            isPresented: $isSelectingADB,
+            allowedContentTypes: [.data]
+        ) { result in
+            if case .success(let url) = result {
+                store.dispatch(.selectProvisioningADB(url))
+            }
+        }
+        .fileImporter(
+            isPresented: $isSelectingArtifact,
+            allowedContentTypes: [.data]
+        ) { result in
+            if case .success(let url) = result {
+                store.dispatch(.selectProvisioningArtifact(url))
+            }
+        }
     }
 
     private var header: some View {
@@ -36,64 +55,143 @@ struct ProvisioningView: View {
     }
 
     private var modeCards: some View {
-        HStack(alignment: .top, spacing: 18) {
-            GlassCard(padding: 26) {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(spacing: 12) {
-                        GradientIcon(systemName: "arrow.triangle.2.circlepath.circle", size: 42)
-                        Text("Enablement / Recovery")
-                            .font(.system(size: 15.5, weight: .semibold))
+        VStack(alignment: .leading, spacing: 18) {
+            selectionCard
+            operationCard
+        }
+    }
+
+    private var selectionCard: some View {
+        GlassCard(padding: 24) {
+            VStack(alignment: .leading, spacing: 14) {
+                SectionHeader(
+                    title: "Local Tools",
+                    subtitle: "Choose the operator-provided ADB executable and, for a full install, the local Immortal APK."
+                )
+
+                HStack(spacing: 10) {
+                    GhostButton(
+                        title: store.adbExecutableSelection == nil ? "Choose ADB…" : "Change ADB…",
+                        systemImage: "terminal",
+                        disabled: store.provisioningState.isRunning
+                    ) {
+                        isSelectingADB = true
                     }
-                    Text("For an already installed, compatible Immortal app. Writes the provision.json handoff, relaunches Immortal, and reads the generated agent.json — no APK is installed.")
-                        .font(.system(size: 12.5))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    stepsPreview(steps: [
-                        "Preflight over authorized ADB",
-                        "Write provision.json",
-                        "Relaunch Immortal",
-                        "Read agent.json + verify bearer /info",
-                    ])
-
-                    PrimaryButton(title: "Start Enablement", systemImage: "bolt.horizontal", disabled: true) {}
-                    Text("Connect a Portal over USB to begin.")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.tertiary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            GlassCard(padding: 26) {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(spacing: 12) {
-                        GradientIcon(
-                            systemName: "shippingbox.and.arrow.backward",
-                            size: 42,
-                            colors: [PortalTheme.warm, PortalTheme.warning]
-                        )
-                        Text("Full USB Provisioning")
-                            .font(.system(size: 15.5, weight: .semibold))
+                    if let adbName = store.adbExecutableSelection?.displayName {
+                        Text(adbName)
+                            .font(.system(size: 12, weight: .medium))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
                     }
-                    Text("Installs and configures Immortal from an operator-selected local artifact. Identity, signature, digest, API level, ABI, and model compatibility are all verified before any install command runs.")
-                        .font(.system(size: 12.5))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    stepsPreview(steps: [
-                        "Select local APK (no downloads)",
-                        "Verify identity/signature/digest/API/ABI/model",
-                        "Device setup + installation",
-                        "Enablement as a distinct final phase",
-                    ])
-
-                    GhostButton(title: "Choose Artifact…", systemImage: "folder", disabled: true) {}
-                    Text("Connect a Portal over USB to begin.")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.tertiary)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+
+                HStack(spacing: 10) {
+                    GhostButton(
+                        title: store.provisioningArtifact == nil ? "Choose APK…" : "Change APK…",
+                        systemImage: "shippingbox",
+                        disabled: store.provisioningState.isRunning
+                    ) {
+                        isSelectingArtifact = true
+                    }
+                    if store.provisioningArtifact != nil {
+                        GhostButton(title: "Clear", systemImage: "xmark", disabled: store.provisioningState.isRunning) {
+                            store.clearProvisioningArtifact()
+                        }
+                    }
+                }
+
+                if let artifactName = store.provisioningArtifact?.displayName {
+                    Text(artifactName)
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                } else {
+                    Text("Full provisioning requires the signed v1.73 Release APK.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
             }
+        }
+    }
+
+    private var operationCard: some View {
+        GlassCard(padding: 24) {
+            VStack(alignment: .leading, spacing: 16) {
+                Picker("Operation", selection: $provisioningMode) {
+                    Text("Enablement / Recovery").tag(ProvisioningMode.fleetAgentEnablementRecovery)
+                    Text("Full USB Provisioning").tag(ProvisioningMode.fullUSBProvisioning)
+                }
+                .pickerStyle(.segmented)
+                .disabled(store.provisioningState.isRunning)
+                .accessibilityLabel("Provisioning operation")
+                .accessibilityHint("Chooses whether to recover the Fleet Agent or install a verified local APK first.")
+
+                TextField("Device serial", text: $store.provisioningDeviceSerialInput)
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(store.provisioningState.isRunning)
+                    .accessibilityLabel("Device serial")
+                    .accessibilityHint("Enter the serial shown by adb devices for the connected Portal.")
+
+                TextField("Portal address (for example 192.168.1.50)", text: $store.provisioningPortalEndpointInput)
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(store.provisioningState.isRunning)
+                    .accessibilityLabel("Portal LAN address")
+                    .accessibilityHint("Enter the Portal's private local network address used for credential verification.")
+
+                TextField("Friendly name (optional)", text: $store.provisioningFriendlyNameInput)
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(store.provisioningState.isRunning)
+                    .accessibilityLabel("Friendly name")
+                    .accessibilityHint("Optionally names this Portal in the registry.")
+
+                stepsPreview(steps: provisioningMode.expectedSteps.map(stepTitle))
+
+                HStack(spacing: 10) {
+                    PrimaryButton(
+                        title: store.provisioningState.isRunning ? "Running…" : "Start",
+                        systemImage: "bolt.horizontal.fill",
+                        disabled: !store.canStartProvisioning(provisioningMode)
+                    ) {
+                        store.dispatch(.startProvisioning(provisioningMode))
+                    }
+                    GhostButton(
+                        title: "Cancel",
+                        systemImage: "stop.fill",
+                        disabled: !store.provisioningState.isRunning
+                    ) {
+                        store.dispatch(.cancelProvisioning)
+                    }
+                }
+
+                if store.provisioningState.isRunning {
+                    ProgressView(value: store.provisioningState.progress.fractionCompleted)
+                        .accessibilityLabel("Provisioning progress")
+                        .accessibilityValue("\(Int((store.provisioningState.progress.fractionCompleted * 100).rounded())) percent")
+                }
+
+                if let status = store.provisioningState.statusMessage {
+                    Text(status)
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(status.contains("passed") || status.contains("saved") ? PortalTheme.success : PortalTheme.textDim)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    @State private var provisioningMode = ProvisioningMode.fleetAgentEnablementRecovery
+
+    private func stepTitle(_ step: ProvisioningStepID) -> String {
+        switch step {
+        case .preflight: return "Verify authorized USB device"
+        case .artifactVerification: return "Verify local APK identity, signer, digest, API, ABI, and model"
+        case .deviceSetup: return "Apply the established device setup"
+        case .installation: return "Install the verified APK"
+        case .writeProvisionFile: return "Write the Fleet Agent handoff"
+        case .relaunchImmortal: return "Relaunch Immortal"
+        case .readAgentManifest: return "Read the generated agent manifest"
+        case .bearerVerification: return "Admit and verify the Portal over LAN"
+        case .complete: return "Save the verified Portal"
         }
     }
 
