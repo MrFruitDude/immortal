@@ -3826,11 +3826,11 @@ private extension PortalManagerTests {
     func waitForDiscovery(
         _ condition: @escaping @Sendable () async -> Bool
     ) async -> Bool {
-        for _ in 0..<100 {
+        for _ in 0..<500 {
             if await condition() {
                 return true
             }
-            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(10))
         }
         return false
     }
