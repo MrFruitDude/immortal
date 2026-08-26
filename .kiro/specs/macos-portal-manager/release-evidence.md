@@ -40,18 +40,20 @@ validation that remains before release.
 
 ## Live Fleet baseline
 
-Refreshed on 2026-08-25 over local LAN with authenticated Fleet requests.
+Refreshed on 2026-08-26 over local LAN with authenticated Fleet requests.
 mDNS found all three `_immortal-remote._tcp` services. ADB reported no USB
 devices.
 
 | Device alias | Result |
 |---|---|
-| Portal Mini A | Authenticated; API 29; Immortal 1.73 (67); install mode dialog; present. |
+| Portal Mini A | Authenticated; API 29; Immortal 1.73 (67); install mode dialog; developer mode off; present. |
 | Portal Mini B | Registered token rejected (`unauthorized`). |
 | Portal Plus A | Authenticated; API 28; Immortal 1.60 (54); paused legacy installer; absent. |
 
 Both authenticated devices returned `not_found` for `GET /apps/profile`, which
 is the expected baseline because they have not received the candidate build.
+The branch-built CLI produced the same result on 2026-08-26 for the API 29
+Portal Mini and the API 28 authenticated Portal Plus.
 
 Portal Mini also returned a successful sanitized diagnostics snapshot: the
 root filesystem was 95% used and userdata was 48% used.
