@@ -6,8 +6,8 @@ validation that remains before release.
 ## Candidate
 
 - Branch: `feature/portal-manager-hardening`
-- Implementation head: `137c108`.
-- Standalone Portal Manager mirror head: `b1f6d04`.
+- Implementation head: `dce463d`.
+- Standalone Portal Manager mirror head: `0468936`.
 - Base: `ae46e16` (`v1.73`)
 - Android Release APK: `app/build/outputs/apk/release/app-release.apk`
   Built artifact SHA-256 at validation:
@@ -32,13 +32,15 @@ validation that remains before release.
 - Portal Manager scope check: pass.
 - Portal Manager direct XCTest bridge: pass (184 tests), including the new
   provisioning-selection fail-closed gate.
+- Critical casting, Room Link, app-sync, and USB-provisioning controls now have
+  explicit accessibility labels, values, hints, or stable identifiers.
 - Offline Release verification tool check: pass.
 - Workflow YAML parse: pass.
 - CI now includes macOS scope/build/tests, Rust tests, and Android unit tests.
   Upstream PR [starbrightlab/immortal#224](https://github.com/starbrightlab/immortal/pull/224)
-  is clean and mergeable at implementation head `137c108`; its
+  is clean and mergeable at implementation head `dce463d`; its
   `portal-manager`, `rust-tests`, `unit-tests`, and `version-sync` checks all
-  pass in workflow runs `32931754772` and `32931754767`.
+  pass in workflow runs `32933080879` and `32933080894`.
   Signed Release packaging remains a local
   gate because public runners do not have the protected signing key.
 
