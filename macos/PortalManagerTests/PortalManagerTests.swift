@@ -4029,7 +4029,82 @@ extension PortalManagerTests {
         store.provisioningDeviceSerialInput = "serial"
         store.provisioningPortalEndpointInput = "192.168.1.50"
 
-        XCTAssertTrue(store.canStartProvisioning(.fleetAgentEnablementRecovery))
+        XCTAssertFalse(store.canStartProvisioning(.fleetAgentEnablementRecovery))
         XCTAssertFalse(store.canStartProvisioning(.fullUSBProvisioning))
+    }
+
+    func testProvisioningTargetRequiresOneRegisteredSerialForRecovery() throws {
+        let portalID = PortalID(rawValue: UUID(uuidString: "33333333-3333-3333-3333-333333333333")!)
+        let entry = PortalRegistryEntry(
+            id: portalID,
+            connectionState: .offline(lastContact: nil, reason: "offline"),
+            identity: PortalIdentity(
+                portalID: portalID,
+                serial: "PORTAL-SERIAL",
+                name: "Living Room",
+                model: "Portal Mini"
+            )
+        )
+
+        let recovered = try PortalManagerStore.provisioningTargetID(
+            for: .fleetAgentEnablementRecovery,
+            serial: " portal-serial ",
+            entries: [entry]
+        )
+        XCTAssertEqual(recovered, portalID)
+
+        XCTAssertThrowsError(try PortalManagerStore.provisioningTargetID(
+            for: .fleetAgentEnablementRecovery,
+            serial: "PORTAL-SERIAL",
+            entries: []
+        )) { error in
+            XCTAssertEqual(error as? ProvisioningTargetError, .registeredPortalRequired)
+        }
+    }
+
+    func testProvisioningTargetUpdatesExactSerialMatchOrCreatesNewFullTarget() throws {
+        let portalID = PortalID(rawValue: UUID(uuidString: "44444444-4444-4444-4444-444444444444")!)
+        let entry = PortalRegistryEntry(
+            id: portalID,
+            connectionState: .offline(lastContact: nil, reason: "offline"),
+            identity: PortalIdentity(
+                portalID: portalID,
+                serial: "PORTAL-SERIAL",
+                name: "Living Room",
+                model: "Portal Mini"
+            )
+        )
+        let duplicate = PortalRegistryEntry(
+            id: PortalID(rawValue: UUID(uuidString: "55555555-5555-5555-5555-555555555555")!),
+            connectionState: .offline(lastContact: nil, reason: "offline"),
+            identity: PortalIdentity(
+                portalID: PortalID(rawValue: UUID(uuidString: "55555555-5555-5555-5555-555555555555")!),
+                serial: "PORTAL-SERIAL",
+                name: "Duplicate",
+                model: "Portal Mini"
+            )
+        )
+
+        let updated = try PortalManagerStore.provisioningTargetID(
+            for: .fullUSBProvisioning,
+            serial: "portal-serial",
+            entries: [entry]
+        )
+        XCTAssertEqual(updated, portalID)
+
+        let created = try PortalManagerStore.provisioningTargetID(
+            for: .fullUSBProvisioning,
+            serial: "NEW-SERIAL",
+            entries: [entry]
+        )
+        XCTAssertNotEqual(created, portalID)
+
+        XCTAssertThrowsError(try PortalManagerStore.provisioningTargetID(
+            for: .fullUSBProvisioning,
+            serial: "PORTAL-SERIAL",
+            entries: [entry, duplicate]
+        )) { error in
+            XCTAssertEqual(error as? ProvisioningTargetError, .ambiguousSerial)
+        }
     }
 }

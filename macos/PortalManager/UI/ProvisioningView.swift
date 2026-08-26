@@ -153,6 +153,11 @@ struct ProvisioningView: View {
                     .accessibilityLabel("Friendly name")
                     .accessibilityHint("Optionally names this Portal in the registry.")
 
+                Text(targetSummary)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Provisioning target")
+
                 stepsPreview(steps: provisioningMode.expectedSteps.map(stepTitle))
 
                 HStack(spacing: 10) {
@@ -189,6 +194,25 @@ struct ProvisioningView: View {
     }
 
     @State private var provisioningMode = ProvisioningMode.fleetAgentEnablementRecovery
+
+    private var targetSummary: String {
+        let target = try? PortalManagerStore.provisioningTargetID(
+            for: provisioningMode,
+            serial: store.provisioningDeviceSerialInput,
+            entries: store.entries
+        )
+
+        switch (provisioningMode, target) {
+        case (.fleetAgentEnablementRecovery, .some):
+            return "Target: the registered Portal matching this serial."
+        case (.fleetAgentEnablementRecovery, .none):
+            return "Recovery requires one registered Portal with this serial."
+        case (.fullUSBProvisioning, .some):
+            return "Target: update the registered Portal matching this serial."
+        case (.fullUSBProvisioning, .none):
+            return "Target: register a new Portal for this serial."
+        }
+    }
 
     private func stepTitle(_ step: ProvisioningStepID) -> String {
         switch step {
