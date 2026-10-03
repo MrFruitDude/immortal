@@ -279,10 +279,11 @@ object SettingsDomains {
                       get = { it.cacheEnabled },
                       set = ScreensaverConfig::setCacheEnabled,
                       help =
-                          "Downloads each photo and video from your server once, then plays it from " +
-                              "this device on every loop instead of fetching it again. Videos are " +
-                              "shrunk to fit the screen. The frame loads faster and your server does " +
-                              "far less work; it uses some of this device's storage.",
+                          "Fills this device's storage with a random selection of your photos and " +
+                              "videos, then plays them from here instead of fetching them again. A " +
+                              "small share is swapped for new picks from your server on a slow " +
+                              "schedule. Videos are shrunk to fit the screen. The frame keeps playing " +
+                              "if the server is down.",
                       visible = { _, s -> s.usesImmich || s.usesDav }),
                   IntSpec(
                       "cacheBudgetGb",
@@ -294,8 +295,37 @@ object SettingsDomains {
                       step = 1,
                       format = { "$it GB" },
                       help =
-                          "The most storage the saved copies may use. When it fills up, the items " +
-                              "shown longest ago are removed first. Also limited by free space.",
+                          "The most storage the saved copies may use. If your album is bigger than " +
+                              "this, a random part of it is kept and slowly rotated. Also limited by " +
+                              "free space.",
+                      visible = { _, s -> (s.usesImmich || s.usesDav) && s.cacheEnabled }),
+                  IntSpec(
+                      "cacheRotatePercent",
+                      "Swap per refresh",
+                      get = { it.cacheRotatePercent },
+                      set = ScreensaverConfig::setCacheRotatePercent,
+                      min = ScreensaverConfig.CACHE_ROTATE_PCT_MIN,
+                      max = ScreensaverConfig.CACHE_ROTATE_PCT_MAX,
+                      step = 1,
+                      format = { if (it == 0) "Off" else "$it%" },
+                      help =
+                          "When storage is full, this share of the saved photos and videos is " +
+                              "replaced with new random picks from your server at each refresh. " +
+                              "Only the new items are downloaded. Off keeps the same selection.",
+                      visible = { _, s -> (s.usesImmich || s.usesDav) && s.cacheEnabled }),
+                  IntSpec(
+                      "cacheRefreshHours",
+                      "Refresh from server every",
+                      get = { it.cacheRefreshHours },
+                      set = ScreensaverConfig::setCacheRefreshHours,
+                      min = ScreensaverConfig.CACHE_REFRESH_H_MIN,
+                      max = ScreensaverConfig.CACHE_REFRESH_H_MAX,
+                      step = ScreensaverConfig.CACHE_REFRESH_H_STEP,
+                      format = { h -> if (h % 24 == 0) "${h / 24} day${if (h == 24) "" else "s"}" else "$h hours" },
+                      help =
+                          "How often this device checks your server: it picks up new and removed " +
+                              "items and swaps part of the selection. Between refreshes the server " +
+                              "isn't contacted at all.",
                       visible = { _, s -> (s.usesImmich || s.usesDav) && s.cacheEnabled }),
                   BoolSpec(
                       "batterySaver",
