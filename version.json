@@ -1,6 +1,6 @@
 {
-  "versionCode": 67,
-  "versionName": "1.73",
+  "versionCode": 68,
+  "versionName": "1.74",
   "apkUrl": "https://github.com/starbrightlab/immortal/releases/latest/download/immortal.apk",
-  "notes": "The camera stream now recovers on its own when another app takes the camera, and the on-screen badge is gone \u2014 the Portal's own camera light is the indicator. Removes the snapshot button, which couldn't produce an image small enough for MQTT and interrupted the live stream."
+  "notes": "The Immich and WebDAV screensaver cache now fills with a random selection of your album and only swaps a small share on a slow schedule, instead of re-downloading constantly. New settings: Swap per refresh (default 5%) and Refresh from server every (default 1 day). The frame keeps playing from storage when the server is down."
 }
