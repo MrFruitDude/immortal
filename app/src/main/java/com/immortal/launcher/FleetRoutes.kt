@@ -51,6 +51,10 @@ class FleetRoutes(private val context: Context) {
     // The phone remote authenticates by paired session (or fleet token), not by the
     // bearer gate below — so it's routed first, before the token check.
     if (req.path.startsWith("/remote/")) return remote.handle(req)
+    // Speech the Portal serves to Google Cast speakers (cast.say): speakers can't send a bearer
+    // token, so these short-lived, unguessable URLs are the one tokenless path. LAN-only like
+    // everything else on this server.
+    if (req.path.startsWith("/muse/media/")) return MuseMedia.serve(req)
     if (!authorized(req)) return resp(401, err("unauthorized"))
     return when (req.path) {
       "/info" -> requireMethod("GET", req) { info() }
@@ -67,6 +71,7 @@ class FleetRoutes(private val context: Context) {
       "/fs/write" -> requireMethod("POST", req) { fsWrite(req) }
       "/logcat" -> requireMethod("GET", req) { logcat(req) }
       "/diag" -> requireMethod("GET", req) { resp(200, FleetDiag.snapshot()) }
+      "/muse" -> muse(req)
       else -> resp(404, err("not_found"))
     }
   }
@@ -497,6 +502,60 @@ class FleetRoutes(private val context: Context) {
                 ?.hostAddress
           }
           .getOrNull()
+
+  /**
+   * Muse gadget control. GET: status. POST (all optional): `enabled`, `sdkToken` ("" clears),
+   * `pair` / `stopPair` (the BLE window), `unpair`, `reconnect`, `send` (+`sessionId`, a message
+   * to Muse from this Portal), `say` (speak locally). Secrets are never echoed back.
+   */
+  private fun muse(req: FleetHttpServer.Request): FleetHttpServer.Response {
+    return when (req.method) {
+        "GET" -> resp(200, ok().put("muse", museStatus()))
+        "POST" -> {
+          val body = parseJson(req.bodyText())
+          if (body == null) resp(400, err("bad_json"))
+          else {
+            val out = ok()
+            if (body.has("sdkToken") && !MuseConfig.setSdkToken(context, body.optString("sdkToken")))
+                return resp(400, err("bad_sdk_token"))
+            if (body.has("enabled")) {
+              MuseConfig.setEnabled(context, body.optBoolean("enabled"))
+              MuseService.sync(context)
+            }
+            if (body.optBoolean("unpair")) {
+              MuseRuntime.closePairing()
+              MuseConfig.clearPairing(context)
+              MuseService.reconnect(context)
+            }
+            if (body.optBoolean("pair")) {
+              MuseService.pair(context)
+              out.put("bleName", MuseConfig.identity(context).bleName)
+            }
+            if (body.optBoolean("stopPair")) MuseService.stopPairing(context)
+            if (body.optBoolean("reconnect")) MuseService.reconnect(context)
+            body.optString("send").takeIf { it.isNotBlank() }?.let {
+              out.put("sent", MuseRuntime.sendChat(it, body.optString("sessionId").ifEmpty { null }))
+            }
+            body.optString("say").takeIf { it.isNotBlank() }?.let {
+              out.put("said", MuseSpeech.speakAndWait(context, it) ?: "ok")
+            }
+            resp(200, out.put("muse", museStatus()))
+          }
+        }
+        else -> resp(405, err("method_not_allowed"))
+      }
+  }
+
+  private fun museStatus(): JSONObject {
+    val id = MuseConfig.identity(context)
+    return MuseRuntime.status.toJson()
+        .put("enabled", MuseConfig.isEnabled(context))
+        .put("paired", MuseConfig.isPaired(context))
+        .put("sdkTokenSet", MuseConfig.sdkToken(context) != null)
+        .put("bleName", id.bleName)
+        .put("nodeId", id.nodeId)
+        .put("ttsAvailable", MuseSpeech.available(context))
+  }
 
   // --- auth + response shaping ------------------------------------------------
 

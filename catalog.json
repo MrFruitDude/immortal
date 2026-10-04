@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "updated": "2026-07-12",
+  "updated": "2026-10-04",
   "note": "Portal app catalog, schema v2. All v2 fields are ADDITIVE so v1 clients keep working. Entries with source 'fdroid' resolve the current APK at install time via the F-Droid API, so they never go stale. Entries with source 'url' use a direct apkUrl (use this for your own custom Portal apps); give them a 'versionCode' (bumped per release) OR a 'versionUrl' — a JSON manifest (e.g. the app's own version.json) with a 'versionCode' field that the store reads live, so a 'releases/latest/download' app stays current with no catalog edit per release. Multi-ABI apps (e.g. VLC) ship separate per-architecture APKs on F-Droid; pin the arm64-v8a build with 'versionCode' since Portal is arm64. New in v2: iconUrl (https PNG; omit to get a monogram tile), author, homepage, submittedBy (community credit), longDescription (detail page), devices (['touch','tv'] — omit when the app runs on every Portal). minSdk drives the compatibility badge: the first-gen Portal/Portal+ and Portal TV are API 28, the 2019/2021 models are API 29.",
   "categories": [
     {
@@ -91,6 +91,18 @@
           "iconUrl": "https://f-droid.org/repo/de.badaix.snapcast/en-US/icon.png",
           "author": "badaix",
           "homepage": "https://github.com/badaix/snapcast"
+        },
+        {
+          "name": "AirPlay Server",
+          "packageName": "io.github.jqssun.airplay",
+          "source": "fdroid",
+          "fdroidId": "io.github.jqssun.airplay",
+          "minSdk": 24,
+          "description": "Make this Portal an AirPlay target — stream music, video and your screen from an iPhone, iPad or Mac.",
+          "longDescription": "An open-source AirPlay receiver (built on UxPlay) that needs no Google services. Once it's running, the Portal shows up in the AirPlay menu of your iPhone, iPad or Mac like an Apple TV: play music and podcasts to it, send videos, or mirror your screen. Audio works on every Portal; screen mirroring and video depend on the Portal's video decoder, so try it on yours. AirPlay 2 multi-room grouping with HomePods isn't supported (that needs root). To get iPhone audio onto Google Home / Nest speakers as well, use Muse's Cast commands or AirConnect on a home server.",
+          "iconUrl": "https://f-droid.org/repo/io.github.jqssun.airplay/en-US/icon.png",
+          "author": "jqssun",
+          "homepage": "https://github.com/jqssun/android-airplay-server"
         }
       ]
     },

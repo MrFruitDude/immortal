@@ -53,6 +53,11 @@ services. Touch models and the remote-driven **Portal TV** are both supported.
 - **Smart-home integration** (`MqttService`) — Immortal can publish the Portal's state and accept
   commands over **MQTT**, so the device shows up in **Home Assistant** as something you can see and
   control (including turning its screen on and off).
+- **Muse gadget** (`MuseService`) — pair a Portal with the **Muse** app like any
+  [Muse Gadget SDK](https://gadgets.muse.ai) device. Muse can then show pictures and notes on it,
+  speak and play audio, read presence and sensors, and reach your Google Home / Nest speakers
+  (Cast) and local device APIs through it. Push-to-talk lives on the home "hey" button, and the
+  screensaver keeps running. ([Details](docs/features/muse.md).)
 - **Fleet management** (`FleetAgentService`) — an optional always-on WiFi service for managing a
   Portal over the network — deploy and update apps, push config, browse files, read logs — without
   reaching for a USB cable each time. It survives reboots (unlike adb-over-WiFi on these non-root

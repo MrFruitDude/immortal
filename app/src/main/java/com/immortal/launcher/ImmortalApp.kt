@@ -84,5 +84,8 @@ class ImmortalApp : Application() {
     // Publish this Portal to Home Assistant over MQTT if the user configured a broker
     // (no-op otherwise). Off by default.
     MqttService.sync(this)
+
+    // Keep this Portal connected to Muse as a gadget if the user set it up (no-op otherwise).
+    MuseService.sync(this)
   }
 }

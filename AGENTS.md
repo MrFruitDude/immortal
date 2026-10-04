@@ -85,6 +85,10 @@ The Kotlin package is flat; files are grouped by name prefix:
   `MediaSession*`, `MediaNotificationListenerService`
 - **Smart home (MQTT):** `Mqtt*`; ambient sensor entities `AmbientSensors`; presence read from
   Meta's own detector `PortalPresence` (feeds `PresenceHub`)
+- **Muse gadget:** `Muse*` — BLE pairing `MusePairing` / `MuseBle`, Noise transport `MuseNoise`,
+  session `MuseLink`, runtime `MuseService` (`MuseRuntime`), commands `MuseCommands`, LAN / Google
+  Cast bridge `MuseLan`, push-to-talk `MuseVoice` / `MuseActivity`, screen `MuseDisplayActivity`;
+  see `docs/features/muse.md`
 - **Remote / Portal TV:** `Remote*`, `TvFocus`
 - **Boot / lifecycle:** `ImmortalApp`, `BootReceiver`, `BootLaunch`, `Sleep*`, `ScreenControl`
 - **Settings (the registry — read [Settings infrastructure](#settings-infrastructure) before

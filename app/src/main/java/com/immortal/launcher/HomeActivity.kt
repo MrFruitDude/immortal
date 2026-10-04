@@ -1419,6 +1419,8 @@ private fun HeaderBar(onScreensaver: () -> Unit) {
   // resume so it shows up the moment the user finishes provisioning without
   // needing to relaunch the launcher.
   var heyPkg by remember { mutableStateOf(heyPackage(context)) }
+  // With Muse paired, the same button is Muse push-to-talk (Settings › Muse › Hey button).
+  var museHey by remember { mutableStateOf(museHeyEnabled(context)) }
   // The header mini-player toggle is re-read on resume so flipping it in Immortal
   // Settings shows/hides the player the moment the user returns home.
   var showMiniPlayer by remember { mutableStateOf(ImmortalSettings.load(context).showMiniPlayer) }
@@ -1438,6 +1440,7 @@ private fun HeaderBar(onScreensaver: () -> Unit) {
         weatherUnit = ImmortalSettings.load(context).weatherUnit
         use24Hour = ImmortalSettings.use24HourClock(context)
         heyPkg = heyPackage(context)
+        museHey = museHeyEnabled(context)
         showMiniPlayer = ImmortalSettings.load(context).showMiniPlayer
       }
     }
@@ -1510,7 +1513,8 @@ private fun HeaderBar(onScreensaver: () -> Unit) {
     // dumb: it just broadcasts the trigger; Millennium owns assistant selection,
     // the premium gate and the falcon mic handoff. Only shown when Millennium is
     // installed (so a bare launcher has no dead button).
-    heyPkg?.let { pkg ->
+    if (heyPkg != null || museHey) {
+      val pkg = heyPkg
       Spacer(Modifier.size(14.dp))
       Surface(
           color = Color(0x33FFFFFF),
@@ -1518,9 +1522,9 @@ private fun HeaderBar(onScreensaver: () -> Unit) {
           modifier =
               Modifier.size(56.dp).tvFocusable(
                   shape = androidx.compose.foundation.shape.CircleShape,
-                  onLongClick = { openHeyPicker(context, pkg) },
+                  onLongClick = { if (pkg != null) openHeyPicker(context, pkg) else openMuse(context, talk = false) },
               ) {
-                fireHey(context, pkg)
+                if (museHey) openMuse(context, talk = true) else if (pkg != null) fireHey(context, pkg)
               },
       ) {
         Box(contentAlignment = Alignment.Center) { MicGlyph() }
@@ -1837,6 +1841,14 @@ private fun heyPackage(context: android.content.Context): String? =
         false
       }
     }
+
+/** Muse owns the hey button once it's paired and the user left that option on. */
+private fun museHeyEnabled(context: android.content.Context): Boolean =
+    MuseConfig.isEnabled(context) && MuseConfig.isPaired(context) && MuseConfig.heyButton(context)
+
+private fun openMuse(context: android.content.Context, talk: Boolean) {
+  context.startActivity(Intent(context, MuseActivity::class.java).putExtra(MuseActivity.EXTRA_TALK, talk))
+}
 
 /** Ask Millennium to activate the user's active assistant (same path as a wake word). */
 private fun fireHey(context: android.content.Context, pkg: String) {

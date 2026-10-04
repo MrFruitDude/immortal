@@ -133,6 +133,9 @@ private fun ToolsScreen(onExit: () -> Unit, onOpen: (ToolPage) -> Unit) {
         ToolRow("Intercom", "Talk to another Portal on your Wi-Fi") {
           context.startActivity(Intent(context, IntercomActivity::class.java))
         }
+        ToolRow("Muse", "Talk to Muse, or pair this Portal as a Muse gadget") {
+          context.startActivity(Intent(context, MuseActivity::class.java))
+        }
         ToolRow("Timers", "Kitchen timers with a live countdown") { onOpen(ToolPage.TIMERS) }
         ToolRow("Leave a note", "A sticky note or a quick voice memo") { onOpen(ToolPage.NOTES) }
         ToolRow("Converter", "Units and currency") { onOpen(ToolPage.CONVERTER) }

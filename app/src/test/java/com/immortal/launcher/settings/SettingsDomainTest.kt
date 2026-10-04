@@ -252,6 +252,19 @@ class SettingsDomainTest {
   }
 
   @Test
+  fun museRegistry_coversEveryPersistedField() {
+    // Pairing tokens and the gadget identity live in MuseConfig too, but they're protocol state
+    // written by pairing (and the fleet /muse route), not user settings — they're not in Settings.
+    val fields =
+        com.immortal.launcher.MuseConfig.Settings::class.java.declaredFields
+            .filter { !java.lang.reflect.Modifier.isStatic(it.modifiers) }
+            .map { it.name }
+            .toSet()
+    val uncovered = fields - SettingsDomains.muse.specs.map { it.key }.toSet()
+    assertTrue("MuseConfig.Settings fields with no spec: $uncovered", uncovered.isEmpty())
+  }
+
+  @Test
   fun allDomains_sectionKeysMatchRealSpecs() {
     SettingsRegistry.domains.forEach { dom ->
       val specKeys = dom.specs.map { it.key }.toSet()
@@ -437,6 +450,7 @@ class SettingsDomainTest {
             "WelcomeConfig",
             "SunriseConfig",
             "QuickBarConfig",
+            "MuseConfig",
             // Context-typed domains (no aggregate Settings class); pinned by their own tests above.
             "MqttConfig",
             "FleetConfig",

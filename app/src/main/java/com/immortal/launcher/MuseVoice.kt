@@ -1,0 +1,361 @@
+/*
+ * Copyright (c) 2026 Starbright Lab.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+package com.immortal.launcher
+
+import android.annotation.SuppressLint
+import android.content.Context
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
+import android.util.Log
+import java.io.ByteArrayOutputStream
+import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
+import org.json.JSONObject
+
+/**
+ * Tracks one turn's assistant replies on the `/chat/subscribe` NDJSON stream. Pure (no Android),
+ * so the binding rules are unit-tested: once the chat ack names our message, only replies to it
+ * (or unparented live replies) count — the subscription also carries other chats' traffic.
+ */
+class MuseReplyTracker {
+  class Message(val id: String) {
+    val text = StringBuilder()
+    var done = false
+  }
+
+  var noteId = ""
+    private set
+  var parentId = ""
+    private set
+  private var lastSeq = 0L
+  val messages = LinkedHashMap<String, Message>()
+  var agentBusy = false
+    private set
+  var lastEventAt = 0L
+    private set
+
+  /** The `/chat/stream` response body: `{message_id, reply_to_message_id}` (maybe under `result`). */
+  fun onAck(body: String) {
+    val root = runCatching { JSONObject(body) }.getOrNull() ?: return
+    val o = root.optJSONObject("result") ?: root
+    noteId = o.optString("message_id")
+    parentId = o.optString("reply_to_message_id")
+  }
+
+  /** Feeds one subscription line; returns the message that just finished, if any. */
+  fun onLine(line: JSONObject, now: Long = System.currentTimeMillis()): Message? {
+    if (line.optString("type") != "event") return null // the subscription ack
+    val seq = line.optLong("seq", 0)
+    if (seq > 0) {
+      if (seq <= lastSeq) return null
+      lastSeq = seq
+    }
+    val event = line.optString("event")
+    val payload = line.optJSONObject("payload") ?: JSONObject()
+    if (event == "agent.status" || event == "task.status") {
+      val code = payload.optString("activity_code")
+      val status = payload.optString("status")
+      agentBusy =
+          if (code.isNotEmpty()) code != "online" && code != "idle"
+          else status.isNotEmpty() && status != "completed" && status != "failed"
+      lastEventAt = now
+      return null
+    }
+    val start = event == "delta.message_start"
+    val append = event == "delta.text_append"
+    val doneEvt = event == "delta.message_done"
+    val full = event == "message.assistant"
+    if (!start && !append && !doneEvt && !full) return null
+    val id = payload.optString("message_id").ifEmpty { line.optString("message_id") }.ifEmpty { payload.optString("id") }
+    if (id.isEmpty()) return null
+    val m = messages[id] ?: run {
+      val parent = payload.optString("reply_to_message_id").ifEmpty { payload.optString("parent_message_id") }
+      if (parent.isNotEmpty() && noteId.isNotEmpty() && parent != noteId && parent != parentId && !messages.containsKey(parent)) return null
+      if (id == noteId || messages.size >= 8) return null
+      Message(id).also { messages[id] = it }
+    }
+    lastEventAt = now
+    if (append) {
+      m.text.append(payload.optString("text"))
+      return null
+    }
+    if ((doneEvt || full) && !m.done) {
+      if (full && payload.has("display_text_ready") && !payload.optBoolean("display_text_ready")) return null
+      val final = payload.optString("display_text").ifEmpty { payload.optString("content") }
+      if (m.text.isEmpty() && final.isNotEmpty()) m.text.append(final)
+      m.done = true
+      return m.takeIf { it.text.isNotEmpty() }
+    }
+    return null
+  }
+
+  fun allDone() = messages.isNotEmpty() && messages.values.all { it.done }
+}
+
+/**
+ * One push-to-talk turn on a Portal: hold to talk, release to send. The mic (16 kHz PCM, up to
+ * 15 s) streams up as a voice note on `POST /chat/stream` while you speak — Muse transcribes it
+ * server-side, as it does the phone app's voice notes — and replies arrive on `POST
+ * /chat/subscribe`. Muse doesn't voice gadget replies, so the Portal speaks them with its own TTS.
+ */
+class MuseVoiceTurn(
+    private val context: Context,
+    private val link: MuseLink,
+    private val nodeId: String,
+    private val listener: Listener,
+) {
+  interface Listener {
+    fun onState(state: State, message: String = "")
+
+    fun onReply(text: String)
+  }
+
+  enum class State { LISTENING, SENDING, THINKING, SPEAKING, DONE, FAILED }
+
+  private val recording = AtomicBoolean(false)
+  private val cancelled = AtomicBoolean(false)
+  private val tracker = MuseReplyTracker()
+  private var chatStream = 0L
+  private var subStream = 0L
+  private val ackBuf = ByteArrayOutputStream()
+  private val subBuf = ByteArrayOutputStream()
+  @Volatile private var acked = false
+  @Volatile private var failure: String? = null
+  private val lock = Object()
+  private val spoken = HashSet<String>()
+
+  /** Starts recording and streaming; returns false (after reporting why) if it can't. */
+  @SuppressLint("MissingPermission") // RECORD_AUDIO is granted at install on API 28/29 Portals
+  fun begin(): Boolean {
+    if (!MicOwner.acquire(MIC_OWNER, MicOwner.PRIORITY_NOTE)) return fail("the microphone is busy (${MicOwner.holder})")
+    val minBuf = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+    val rec = runCatching {
+      AudioRecord(MediaRecorder.AudioSource.MIC, RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuf, RATE))
+    }.getOrNull()
+    if (rec == null || rec.state != AudioRecord.STATE_INITIALIZED) {
+      rec?.release()
+      MicOwner.release(MIC_OWNER)
+      return fail("couldn't open the microphone")
+    }
+    chatStream = link.openRequest("POST", "/chat/stream", headers("application/json", "application/json"),
+        noteHead(nodeId).toByteArray(), false) { onChatFrame(it) }
+    if (chatStream == 0L) {
+      rec.release()
+      MicOwner.release(MIC_OWNER)
+      return fail("can't reach Muse")
+    }
+    recording.set(true)
+    listener.onState(State.LISTENING)
+    Thread({ record(rec) }, "muse-voice-mic").start()
+    return true
+  }
+
+  /** Release: stop recording; the rest is sent and the reply awaited on a worker thread. */
+  fun end() {
+    recording.set(false)
+  }
+
+  fun cancel() {
+    cancelled.set(true)
+    recording.set(false)
+    MuseSpeech.stop()
+    val streams = listOf(chatStream, subStream).filter { it != 0L }
+    if (streams.isNotEmpty()) Thread({ streams.forEach { link.cancel(it) } }, "muse-voice-cancel").start()
+    synchronized(lock) { lock.notifyAll() }
+  }
+
+  private fun record(rec: AudioRecord) {
+    val started = System.currentTimeMillis()
+    var pcmBytes = 0
+    // Base64 needs whole 3-byte groups until the last chunk; stage PCM and flush in multiples.
+    val stage = ByteArrayOutputStream()
+    stage.write(wavHeader(RATE))
+    val buf = ByteArray(RATE / 10 * 2) // 100 ms
+    try {
+      rec.startRecording()
+      while (recording.get() && pcmBytes < MAX_NOTE_BYTES) {
+        val n = rec.read(buf, 0, buf.size)
+        if (n <= 0) continue
+        stage.write(buf, 0, n)
+        pcmBytes += n
+        if (stage.size() >= PART_BYTES && !flush(stage, last = false)) return finish("can't keep up with Muse")
+      }
+    } finally {
+      runCatching { rec.stop() }
+      rec.release()
+      MicOwner.release(MIC_OWNER)
+      recording.set(false)
+    }
+    if (cancelled.get()) return
+    if (pcmBytes < RATE * 2 * 3 / 10) {
+      link.cancel(chatStream)
+      return finish("didn't catch that")
+    }
+    listener.onState(State.SENDING)
+    // Subscribe before the note's last chunk so no reply event can slip past.
+    subStream = link.openRequest("POST", "/chat/subscribe", headers("application/json", "application/x-ndjson"),
+        "{}".toByteArray(), true) { onSubFrame(it) }
+    if (subStream == 0L || !flush(stage, last = true)) return finish("can't reach Muse")
+    Log.i(TAG, "voice note sent: ${pcmBytes / (RATE * 2.0)}s in ${System.currentTimeMillis() - started}ms")
+    listener.onState(State.THINKING)
+    awaitReplies()
+  }
+
+  private fun flush(stage: ByteArrayOutputStream, last: Boolean): Boolean {
+    val all = stage.toByteArray()
+    val take = if (last) all.size else all.size - all.size % 3
+    stage.reset()
+    stage.write(all, take, all.size - take)
+    val text = B64.encode(all.copyOf(take)) + if (last) NOTE_TAIL else ""
+    return link.sendBody(chatStream, text.toByteArray(), last)
+  }
+
+  private fun awaitReplies() {
+    val sentAt = System.currentTimeMillis()
+    synchronized(lock) {
+      while (!cancelled.get() && failure == null) {
+        val now = System.currentTimeMillis()
+        val quietFor = now - maxOf(tracker.lastEventAt, sentAt)
+        if (tracker.allDone() && quietFor > SETTLE_MS && !tracker.agentBusy) break
+        if (tracker.messages.isEmpty() && now - sentAt > if (tracker.agentBusy) BUSY_REPLY_TIMEOUT_MS else REPLY_TIMEOUT_MS) {
+          failure = "Muse didn't answer"
+          break
+        }
+        if (now - sentAt > TURN_CAP_MS) break
+        lock.wait(250)
+      }
+    }
+    if (subStream != 0L) link.cancel(subStream)
+    if (cancelled.get()) return
+    failure?.let { return finish(it) }
+    // Let the last spoken reply finish before reporting done.
+    while (speaking.get() && !cancelled.get()) Thread.sleep(100)
+    listener.onState(State.DONE)
+  }
+
+  private val speaking = AtomicBoolean(false)
+
+  private fun onReplyDone(m: MuseReplyTracker.Message) {
+    if (!spoken.add(m.id)) return
+    val text = m.text.toString().trim()
+    listener.onReply(text)
+    if (MuseConfig.speakReplies(context)) {
+      speaking.set(true)
+      listener.onState(State.SPEAKING)
+      Thread({
+        MuseSpeech.speakAndWait(context, speakable(text), queue = true)
+        speaking.set(false)
+        synchronized(lock) { lock.notifyAll() }
+      }, "muse-voice-tts").start()
+    }
+  }
+
+  private fun onChatFrame(f: MuseFrame) {
+    when (f) {
+      is MuseFrame.Response -> {
+        if (f.status >= 400) setFailure("Muse refused the voice note (HTTP ${f.status})")
+        ackBuf.write(f.body)
+        if (f.endBody) ack()
+      }
+      is MuseFrame.Body -> {
+        ackBuf.write(f.data)
+        if (f.endBody) ack()
+      }
+      is MuseFrame.Reset -> if (!acked) setFailure("voice note dropped: ${f.reason}")
+    }
+  }
+
+  private fun ack() {
+    tracker.onAck(String(ackBuf.toByteArray(), Charsets.UTF_8))
+    acked = true
+  }
+
+  private fun onSubFrame(f: MuseFrame) {
+    val data = when (f) {
+      is MuseFrame.Response -> {
+        if (f.status >= 400) return setFailure("Muse refused the reply stream (HTTP ${f.status})")
+        f.body
+      }
+      is MuseFrame.Body -> f.data
+      is MuseFrame.Reset -> return
+    }
+    subBuf.write(data)
+    val bytes = subBuf.toByteArray()
+    var start = 0
+    for (i in bytes.indices) {
+      if (bytes[i] != '\n'.code.toByte()) continue
+      val line = String(bytes, start, i - start, Charsets.UTF_8).trim()
+      start = i + 1
+      if (line.isEmpty()) continue
+      val obj = runCatching { JSONObject(line) }.getOrNull() ?: continue
+      synchronized(lock) {
+        tracker.onLine(obj)?.let { onReplyDone(it) }
+        lock.notifyAll()
+      }
+    }
+    subBuf.reset()
+    if (start < bytes.size) {
+      if (bytes.size - start > MAX_LINE) return setFailure("reply too large")
+      subBuf.write(bytes, start, bytes.size - start)
+    }
+  }
+
+  private fun setFailure(msg: String) {
+    synchronized(lock) {
+      if (failure == null) failure = msg
+      lock.notifyAll()
+    }
+  }
+
+  private fun fail(msg: String): Boolean {
+    listener.onState(State.FAILED, msg)
+    return false
+  }
+
+  private fun finish(msg: String) {
+    if (!cancelled.get()) listener.onState(State.FAILED, msg)
+  }
+
+  private fun headers(type: String, accept: String) =
+      listOf("x-request-id" to UUID.randomUUID().toString(), "x-app-id" to "hatch-web", "Content-Type" to type, "accept" to accept)
+
+  companion object {
+    private const val TAG = "MuseVoice"
+    private const val MIC_OWNER = "muse"
+    const val RATE = 16_000
+    const val MAX_NOTE_BYTES = RATE * 2 * 15 // Muse stops listening at 15 s
+    const val PART_BYTES = 6144 // 192 ms of PCM per body chunk
+    const val SETTLE_MS = 3_000L
+    const val REPLY_TIMEOUT_MS = 60_000L
+    const val BUSY_REPLY_TIMEOUT_MS = 180_000L
+    const val TURN_CAP_MS = 5 * 60_000L
+    const val MAX_LINE = 256 * 1024
+    const val NOTE_TAIL = "\"}]}"
+
+    fun noteHead(nodeId: String) =
+        "{\"message\":\"\",\"output_modality\":\"text\",\"device_id\":\"$nodeId\",\"items\":[{\"type\":\"file\"," +
+            "\"mime_type\":\"audio/wav\",\"filename\":\"voice_note.wav\",\"data_base64\":\""
+
+    /** A streaming WAV header: sizes "unknown" (0xFFFFFFFF); the server reads to the end. */
+    fun wavHeader(rate: Int): ByteArray {
+      val h = java.nio.ByteBuffer.allocate(44).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+      h.put("RIFF".toByteArray()).putInt(-1).put("WAVEfmt ".toByteArray()).putInt(16).putShort(1).putShort(1)
+          .putInt(rate).putInt(rate * 2).putShort(2).putShort(16).put("data".toByteArray()).putInt(-1)
+      return h.array()
+    }
+
+    /** Strips Markdown that reads badly aloud (links keep their text, code fences go). */
+    fun speakable(text: String): String =
+        text.replace(Regex("```[\\s\\S]*?```"), " ")
+            .replace(Regex("\\[([^\\]]+)]\\([^)]+\\)"), "$1")
+            .replace(Regex("[*_`#>]+"), "")
+            .replace(Regex("https?://\\S+"), "")
+            .trim()
+  }
+}

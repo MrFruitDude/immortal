@@ -9,7 +9,7 @@ description: >-
   diagnostics; or run any Fleet Agent HTTP endpoint across one or many Portals.
   Triggers on: "fleetctl", "fleet agent", "manage the Portals", "push to the
   Portal over WiFi", "install on all Portals", "update the fleet", "dev update",
-  "screensaver over the air", "calendar widget on the Portal".
+  "screensaver over the air", "calendar widget on the Portal", "pair the Portal with Muse".
 ---
 
 # Immortal Fleet management (`fleetctl`)
@@ -117,6 +117,17 @@ Calendar widget (its own endpoint; applies live on next refresh):
 
 `--url` = Google "secret address in iCal format" or Apple iCloud public / `webcal://` link.
 `--range day|3day|week|agenda` · `--size small|medium|large` · `--side left|right`.
+
+Muse gadget (pair the Portal with the Muse app; see docs/features/muse.md):
+
+```bash
+./fleetctl muse status --device "Kitchen"        # state, BLE name, paired / token set
+./fleetctl muse token - --device "Kitchen"       # SDK token from gadgets.muse.ai on stdin (a secret)
+./fleetctl muse pair --device "Kitchen"          # 10-min BLE window; then Add Device in the Muse app
+./fleetctl muse send "what's on my calendar" --device "Kitchen"
+./fleetctl muse say "Dinner's ready" --device all
+./fleetctl muse unpair|reconnect|enable|disable --device …
+```
 
 Files / logs:
 

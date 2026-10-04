@@ -21,6 +21,8 @@ import com.immortal.launcher.FaceCatalog
 import com.immortal.launcher.FacePickerActivity
 import com.immortal.launcher.FleetCalendar
 import com.immortal.launcher.FleetConfig
+import com.immortal.launcher.MuseConfig
+import com.immortal.launcher.MuseService
 import com.immortal.launcher.FleetScreensaver
 import com.immortal.launcher.FrameMode
 import com.immortal.launcher.PhotoFramePreviewActivity
@@ -1313,6 +1315,85 @@ object SettingsDomains {
           defaults = { WelcomeConfig.Settings() },
       )
 
+  /**
+   * Muse gadget ([MuseConfig]). Pairing itself is an action on the Muse screen (and the fleet
+   * `/muse` route), not a setting; these are what Muse may do on this Portal.
+   */
+  val muse: SettingsDomain<MuseConfig.Settings> =
+      SettingsDomain(
+          id = "muse",
+          title = "Muse",
+          load = MuseConfig::load,
+          specs =
+              listOf(
+                  BoolSpec(
+                      "enabled",
+                      "Muse gadget",
+                      get = { it.enabled },
+                      set = MuseConfig::setEnabled,
+                      help = "Keep this Portal connected to your Muse once it's paired."),
+                  StringSpec(
+                      "sdkToken",
+                      "SDK token",
+                      get = { it.sdkToken },
+                      set = { c, v -> MuseConfig.setSdkToken(c, v) },
+                      secret = true,
+                      applyWhen = { MuseConfig.isValidSdkToken(it) },
+                      help = "Your mgst_ token from gadgets.muse.ai › Account › SDK tokens. Every gadget " +
+                          "needs one to pair."),
+                  BoolSpec(
+                      "speakReplies",
+                      "Speak replies",
+                      get = { it.speakReplies },
+                      set = MuseConfig::setSpeakReplies,
+                      help = "Read Muse's answers aloud with this Portal's text-to-speech voice."),
+                  BoolSpec(
+                      "heyButton",
+                      "Hey button opens Muse",
+                      get = { it.heyButton },
+                      set = MuseConfig::setHeyButton,
+                      help = "Once Muse is paired, the home screen's hey button starts push-to-talk."),
+                  BoolSpec(
+                      "allowDisplay",
+                      "Let Muse show things",
+                      get = { it.allowDisplay },
+                      set = MuseConfig::setAllowDisplay,
+                      help = "Pictures and notes Muse sends take over the screen for a while, then " +
+                          "the photo frame comes back."),
+                  IntSpec(
+                      "imageSeconds",
+                      "Show for",
+                      get = { it.imageSeconds },
+                      set = MuseConfig::setImageSeconds,
+                      min = 10,
+                      max = 600,
+                      step = 10,
+                      format = { if (it % 60 == 0) "${it / 60} min" else "${it}s" },
+                      visible = { _, s -> s.allowDisplay }),
+                  BoolSpec(
+                      "allowLan",
+                      "Home network access",
+                      get = { it.allowLan },
+                      set = MuseConfig::setAllowLan,
+                      help = "Let Muse find and control devices on your Wi-Fi through this Portal: " +
+                          "Google Home / Nest speakers (Cast), and local APIs like Hue or Shelly. " +
+                          "Private addresses only."),
+              ),
+          sections =
+              mapOf(
+                  "speakReplies" to "Voice",
+                  "heyButton" to "Voice",
+                  "allowDisplay" to "What Muse may do",
+                  "imageSeconds" to "What Muse may do",
+                  "allowLan" to "What Muse may do"),
+          // The command list is sent at registration, so a permission change re-registers.
+          onApplied = { c, _ ->
+            MuseService.sync(c)
+            MuseService.reconnect(c)
+          },
+          defaults = { MuseConfig.Settings() },
+      )
+
   val all: List<SettingsDomain<*>> =
-      listOf(screensaver, calendar, immortal, mqtt, quickbar, fleet, chime, digitalclock, welcome, sunrise)
+      listOf(screensaver, calendar, immortal, mqtt, quickbar, fleet, chime, digitalclock, welcome, sunrise, muse)
 }

@@ -7,6 +7,7 @@
 
     <!-- Runs on both touch Portals and the Portal TV (Leanback). Neither feature is
          required, so the app installs on every model. -->
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
@@ -40,6 +41,13 @@
     <!-- Voice notes: AudioNote records short memos via the handset mic; also used by the
          LAN intercom. Requested at runtime; recording is a no-op until granted. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Muse gadget pairing: a BLE GATT peripheral the Muse app sets the Portal up through (only
+         while the pairing window is open). Install-time on the API 28/29 Portals; the API 31+
+         runtime pair is declared for completeness. -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <!-- Fleet Agent: a foreground service so WiFi device management survives a
          reboot on these non-root Portals (where adb-over-WiFi can't). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -294,6 +302,21 @@
             android:exported="false"
             android:label="Intercom"
             android:theme="@style/Theme.SampleApp" />
+        <activity
+            android:name=".MuseActivity"
+            android:exported="false"
+            android:label="Muse"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.SampleApp" />
+        <!-- What Muse puts on the screen (display.draw_url / show_text). Its own task so it can
+             come forward from the background over the photo frame and leave it intact. -->
+        <activity
+            android:name=".MuseDisplayActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="com.immortal.launcher.muse_display"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
 
         <!-- Connect a self-hosted Immich server as the screensaver source. -->
         <activity
@@ -473,6 +496,11 @@
              Off until the user configures a broker in Immortal settings. -->
         <service
             android:name=".MqttService"
+            android:exported="false" />
+
+        <!-- Muse gadget: keeps the Portal connected to its Muse (see MuseRuntime). -->
+        <service
+            android:name=".MuseService"
             android:exported="false" />
 
         <!-- Live camera streaming (RTSP). Foreground because the camera is held for as long as

@@ -187,6 +187,12 @@ private fun ImmortalSettingsScreen() {
 
       MqttNavRow(onOpen = { context.startActivity(Intent(context, MqttActivity::class.java)) })
 
+      FeatureSettingsNavRow(
+          "Muse", "Muse",
+          "Pair this Portal as a Muse gadget, push-to-talk, what Muse may do here") {
+            context.startActivity(Intent(context, MuseActivity::class.java))
+          }
+
       RemoteNavRow()
 
       FeatureSettingsNavRow(

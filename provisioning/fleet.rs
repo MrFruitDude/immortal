@@ -841,6 +841,47 @@ fn cmd_calendar(args: &Args) -> i32 {
     post_json(args, "/calendar", build_obj(&fields))
 }
 
+fn cmd_muse(args: &Args) -> i32 {
+    let action = args.pos(0).map(|s| s.as_str()).unwrap_or("status");
+    // Everything after the action, so `muse send turn off the lights` needs no quoting.
+    let rest = || -> String {
+        let words: Vec<String> = (1..).map_while(|i| args.pos(i).cloned()).collect();
+        words.join(" ")
+    };
+    let mut fields: Vec<(&str, Field)> = Vec::new();
+    match action {
+        "status" | "get" => return simple_get(args, "/muse"),
+        "pair" => fields.push(("pair", Field::B(true))),
+        "stop-pair" => fields.push(("stopPair", Field::B(true))),
+        "enable" => fields.push(("enabled", Field::B(true))),
+        "disable" => fields.push(("enabled", Field::B(false))),
+        "unpair" => fields.push(("unpair", Field::B(true))),
+        "reconnect" => fields.push(("reconnect", Field::B(true))),
+        "token" => {
+            // `muse token -` reads it from stdin so it stays out of shell history.
+            let mut t = rest();
+            if t == "-" || t.is_empty() {
+                let mut buf = String::new();
+                std::io::stdin().read_line(&mut buf).ok();
+                t = buf.trim().to_string();
+            }
+            fields.push(("sdkToken", Field::S(t)));
+        }
+        "send" | "say" => {
+            let text = rest();
+            if text.is_empty() {
+                die("muse send|say: give the text to send or speak");
+            }
+            fields.push((if action == "send" { "send" } else { "say" }, Field::S(text)));
+            if let Some(sid) = args.flag("session-id") {
+                fields.push(("sessionId", Field::S(sid)));
+            }
+        }
+        _ => die("muse: expected status|pair|stop-pair|enable|disable|unpair|reconnect|token|send|say"),
+    }
+    post_json(args, "/muse", build_obj(&fields))
+}
+
 fn cmd_screensaver(args: &Args) -> i32 {
     let action = args.pos(0).map(|s| s.as_str()).unwrap_or("get");
     if action == "get" {
@@ -1088,6 +1129,13 @@ COMMANDS:
                                 --size small|medium|large, --side left|right;
                                 enable/disable toggle the widget, off clears the link)
   screensaver <get|set>         photo-frame config (see options below)
+  muse <status|pair|stop-pair|enable|disable|unpair|reconnect>
+                                Muse gadget: connection state, open the 10-min BLE
+                                pairing window for the Muse app, forget the pairing
+  muse token <mgst_...|->       set the gadget SDK token from gadgets.muse.ai (- = stdin)
+  muse send <text> [--session-id ID]
+                                message your Muse from this Portal
+  muse say <text>               speak text on the Portal's speaker
   ls [path]                     list a directory (default /sdcard)
   cat <path>                    print a text file from the device
   pull <remote> [local|-]       download a file (default: stdout)
@@ -1137,6 +1185,7 @@ fn main() {
         "dev" => cmd_dev(&args),
         "calendar" => cmd_calendar(&args),
         "screensaver" => cmd_screensaver(&args),
+        "muse" => cmd_muse(&args),
         "ls" => cmd_ls(&args),
         "cat" => cmd_cat(&args),
         "pull" => cmd_pull(&args),
