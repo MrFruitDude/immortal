@@ -18,7 +18,7 @@
 #   ./fleet-backup.sh                 # back up every registered device
 #   ./fleet-backup.sh all             # same
 #   ./fleet-backup.sh "Portal Mini"   # one device by name
-#   ./fleet-backup.sh 819LCM01Z09E4D12  # …or by serial
+#   ./fleet-backup.sh <SERIAL>          # …or by serial
 #
 # The backups/ tree holds tokens + passwords in cleartext — it is git-ignored;
 # keep it private and treat it like any other secret store.

@@ -19,9 +19,9 @@
 #   --dry-run  print what would happen, change nothing.
 #
 # Usage:
-#   ./fleet-restore.sh 819LCM01Z09E4D12                       # apps + prefs + reboot
+#   ./fleet-restore.sh <SERIAL>                               # apps + prefs + reboot
 #   ./fleet-restore.sh "Portal Mini" --config --dry-run
-#   ./fleet-restore.sh 819LCM01Z09E4D12 --backup backups/819LCM01Z09E4D12/20260620-200000
+#   ./fleet-restore.sh <SERIAL> --backup backups/<SERIAL>/20260620-200000
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
