@@ -21,48 +21,87 @@ sends takes over the screen for a while (or until you tap it), then the photo fr
 
 That's it. The Portal stays connected across reboots and reconnects on its own.
 
+## Alfred
+
+On the Portal, Muse has a face: **Alfred**, a pixel-art office nerd with a messy mop of hair,
+round tortoiseshell glasses, a braces grin, a grey suit, a polka-dot tie and a pocket protector.
+He's drawn live at 64x64 in the style of the Muse gadgets' avatars, and acts out what's
+happening:
+
+- **Listening:** hands to his ears.
+- **Thinking:** hand to chin, with thought dots.
+- **Speaking:** his mouth moves with the voice.
+- **Error:** X eyes.
+- **Off:** he waves goodbye.
+- **Happy:** tap him to pet him and he hops.
+
+Hold him (or the talk button) to speak to Muse.
+
+### "Hey Alfred"
+
+Turn on **Settings › Muse › "Hey Alfred"** and the Portal listens for its wake word. It's built
+around privacy:
+
+- **On the device.** Wake-word spotting runs locally (Kaldi via Vosk). Audio stays in memory,
+  is never written to disk, and nothing leaves the Portal while it waits. The recogniser only
+  runs while there's sound in the room.
+- **Only what you say to it.** After "Hey Alfred" (a chime plays), one voice note goes to Muse:
+  from just before the wake word until you stop talking, at most 15 seconds. Then it goes back
+  to listening locally.
+- **Only when it makes sense.** It listens only while Muse is connected and, by default, only
+  while someone is in the room (Meta's presence sensing). It pauses while Alfred talks, so it
+  can't wake itself, and hands the microphone to the intercom, the camera or a voice note
+  whenever they want it.
+- **Visible.** The Muse screen shows when it's listening.
+
+The first time it's turned on, it downloads a 41 MB speech model. The download is
+checksum-verified.
+
 ## What Muse can do on a Portal
 
 | Command | What it does |
 |---|---|
-| `display.draw_url` | Show a picture full screen (JPEG/PNG/WebP/GIF), with an optional caption |
-| `display.show_text` | Show a note, list or briefing in large type |
-| `display.show_animation` | Clear it and go back to the home screen or photo frame |
-| `speaker.say` | Speak text with the Portal's text-to-speech voice |
-| `audio.play_url` / `audio.stop` | Play a stream or file (radio, MP3, AAC…) on the Portal |
-| `voice.configure` | Read or set the media volume |
-| `sensors.read` | Presence (Meta's own detector where available), screen state, light/temperature |
-| `screensaver.start`, `screen.wake` | Start the photo frame, or turn the screen on |
-| `device.health` | Model, Android version, memory, storage, battery, Wi-Fi, TTS availability |
-| `lan.discover` | Find devices on your Wi-Fi with mDNS (Cast, AirPlay, Sonos, Hue, HomeKit, ESPHome…) |
-| `lan.http` | Call a local device's HTTP API (Hue, Shelly, Elgato, Home Assistant…) |
-| `cast.status`, `cast.play_url`, `cast.control`, `cast.volume` | Control Google Home / Nest speakers and displays, Chromecasts and **speaker groups** |
-| `cast.say` | Speak something on a Google Home speaker or group (the Portal renders the speech and serves it to the speaker) |
+| `canvas.show` / `canvas.update` / `canvas.snapshot` / `canvas.close` | **The Portal as Muse's canvas:** full-screen HTML/CSS/JS/SVG (dashboards, briefings, animations, games, interactive pages). See below. |
+| `display.draw_url`, `display.show_text`, `display.show_animation` | Show a picture or large text, or clear the screen |
+| `speaker.say` | Speak text with the Portal's voice |
+| `audio.play_url` / `audio.stop` | Play a stream or file on the Portal |
+| `music.radio` | Find a station by name or genre (radio-browser.info) and play it here or on a Google Home / Cast group |
+| `voice.configure` | Read or set the volume |
+| `app.list`, `app.launch`, `app.open_url`, `media.control` | Open apps and links; play/pause/skip what's playing |
+| `ha.states`, `ha.call` | Home Assistant: read entities, call services (once its URL and token are set) |
+| `hue.pair`, `hue.lights`, `hue.set` | Philips Hue: pair (press the bridge button), then lights, rooms, colours, scenes |
+| `cast.status`, `cast.play_url`, `cast.say`, `cast.control`, `cast.volume` | Google Home / Nest speakers, displays and **speaker groups** |
+| `lan.discover`, `lan.http` | Find devices with mDNS; call local HTTP APIs (private addresses only) |
+| `sensors.read`, `device.health`, `screensaver.start`, `screen.wake` | Presence and room sensors, status, screen |
 
-So you can ask Muse things like *"show me tomorrow's weather on the kitchen Portal"*, *"play
-BBC Radio 4 on the Portal"*, *"announce dinner on all the Google Homes"* or *"turn the Hue
-lights down"*.
+### The canvas
 
-Turn any of these off under **Settings › Muse**. **Let Muse show things** covers the display
-commands. **Home network access** covers `lan.*` and `cast.*`; these only ever reach private
-(RFC 1918 / link-local) addresses and never follow redirects. Changes re-register with Muse
-immediately.
+`canvas.show` gives Muse the whole screen as a sandboxed web page. Inside it, three calls reach
+back:
 
-There is deliberately **no shell**. The Linux SDK gives Muse `system.run`, but an unrooted
-Android app user has no useful shell, and a remote shell on a living-room screen isn't something
-to hand an agent.
+- `portal.send("…")` posts a message to Muse as coming from this Portal, so a button on Muse's
+  page can carry the conversation forward (at most one per 2 s).
+- `portal.say("…")` speaks on the Portal.
+- `portal.close()` dismisses the canvas.
 
-## Talk to Muse
+The page has no access to device files or other apps. A long-press closes it, and so does its
+timeout, after which the photo frame comes back. `canvas.snapshot` lets Muse see what it drew.
 
-Once paired, the home screen's **hey** button opens Muse push-to-talk (turn this off under
-**Settings › Muse › Hey button opens Muse**; long-press still reaches the stock assistant picker
-where one is installed). Hold the big button and speak, then release to send. A quick tap
-starts listening and a second tap sends. Muse transcribes the voice note, and the Portal shows
-and speaks the reply. Muse doesn't voice gadget replies itself, so this needs a text-to-speech
-engine on the Portal (`device.health` reports `tts_available`).
+### Staying in control
 
-Android 10 Portals block background microphone use for sideloaded apps, so there's no wake
-word. Push-to-talk works because the Muse screen is in the foreground.
+Each capability has its own switch under **Settings › Muse**:
+
+- **Let Muse show things:** display and canvas.
+- **Apps & media**
+- **Smart home control:** Home Assistant and Hue.
+- **Home network access:** LAN and Cast.
+
+Changes take effect immediately: Muse re-registers with only the allowed commands.
+**What Muse did on this Portal** lists every command it ran, with a short summary that never
+includes message text or credentials.
+
+There is deliberately **no shell**. An unrooted Android app user has no useful shell, and a
+remote shell on a living-room screen isn't something to hand an agent.
 
 ## From a laptop (`fleetctl`)
 

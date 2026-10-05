@@ -37,6 +37,7 @@ class MuseService : Service() {
     createChannel()
     startForeground(NOTIF_ID, notification())
     MuseRuntime.start(applicationContext)
+    AlfredWake.sync(applicationContext)
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -51,6 +52,7 @@ class MuseService : Service() {
   override fun onBind(intent: Intent?): IBinder? = null
 
   override fun onDestroy() {
+    AlfredWake.stop()
     MuseRuntime.stop()
     super.onDestroy()
   }

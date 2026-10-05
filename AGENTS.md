@@ -87,8 +87,10 @@ The Kotlin package is flat; files are grouped by name prefix:
   Meta's own detector `PortalPresence` (feeds `PresenceHub`)
 - **Muse gadget:** `Muse*` — BLE pairing `MusePairing` / `MuseBle`, Noise transport `MuseNoise`,
   session `MuseLink`, runtime `MuseService` (`MuseRuntime`), commands `MuseCommands`, LAN / Google
-  Cast bridge `MuseLan`, push-to-talk `MuseVoice` / `MuseActivity`, screen `MuseDisplayActivity`;
-  see `docs/features/muse.md`
+  Cast bridge `MuseLan`, push-to-talk `MuseVoice` / `MuseActivity`, screen `MuseDisplayActivity`,
+  canvas `MuseCanvasActivity`, smart home / music / apps `MuseHome`, settings `MuseSettingsActivity`;
+  the character and conversation `Alfred` / `AlfredAvatar` / `AlfredStage`, on-device wake word
+  `AlfredWake`; see `docs/features/muse.md`
 - **Remote / Portal TV:** `Remote*`, `TvFocus`
 - **Boot / lifecycle:** `ImmortalApp`, `BootReceiver`, `BootLaunch`, `Sleep*`, `ScreenControl`
 - **Settings (the registry — read [Settings infrastructure](#settings-infrastructure) before
@@ -213,7 +215,9 @@ Quick reference (run from `provisioning/`):
 - **Catalog changes** (`catalog.json`) must pass `scripts/validate_catalog.py`; keep the bundled
   fallback at `app/src/main/assets/catalog.json` in mind.
 - **Releases:** the self-update asset must be named `immortal.apk`; bump `version.json`. See
-  [`docs/releasing.md`](docs/releasing.md) and `scripts/cut-release.sh`.
+  [`docs/releasing.md`](docs/releasing.md) and `scripts/cut-release.sh`. The repo Portals update
+  from is `immortal.homeRepo` in `gradle.properties` (this checkout: the MrFruitDude fork — see
+  [`docs/fork.md`](docs/fork.md)); keep it, `RELEASE_REPO` and `version.json`'s `apkUrl` in step.
 
 ## Hardware limits (don't try to "fix" these)
 

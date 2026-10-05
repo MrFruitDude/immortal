@@ -97,10 +97,17 @@ object MuseConfig {
       val allowLan: Boolean = true,
       val heyButton: Boolean = true,
       val sdkToken: String = "",
+      val wakeWord: Boolean = false,
+      val wakeOnlyWhenPresent: Boolean = true,
+      val allowApps: Boolean = true,
+      val allowSmartHome: Boolean = true,
+      val haUrl: String = "",
+      val haToken: String = "",
   )
 
   fun load(c: Context) =
-      Settings(isEnabled(c), speakReplies(c), allowDisplay(c), imageSeconds(c), allowLan(c), heyButton(c), sdkToken(c).orEmpty())
+      Settings(isEnabled(c), speakReplies(c), allowDisplay(c), imageSeconds(c), allowLan(c), heyButton(c), sdkToken(c).orEmpty(),
+          wakeWord(c), wakeOnlyWhenPresent(c), allowApps(c), allowSmartHome(c), haUrl(c), haToken(c))
 
   fun isEnabled(c: Context): Boolean = prefs(c).getBoolean("enabled", false)
 
@@ -129,10 +136,51 @@ object MuseConfig {
 
   fun setAllowLan(c: Context, on: Boolean) = prefs(c).edit().putBoolean("allow_lan", on).apply()
 
+  /**
+   * "Hey Alfred": listen for the wake word on this Portal. Keyword spotting is on-device; audio
+   * only goes to Muse after the wake word. Off by default (it opens the microphone).
+   */
+  fun wakeWord(c: Context): Boolean = prefs(c).getBoolean("wake_word", false)
+
+  fun setWakeWord(c: Context, on: Boolean) = prefs(c).edit().putBoolean("wake_word", on).apply()
+
+  /** Only listen for the wake word while someone is in the room (Meta's presence detector). */
+  fun wakeOnlyWhenPresent(c: Context): Boolean = prefs(c).getBoolean("wake_presence", true)
+
+  fun setWakeOnlyWhenPresent(c: Context, on: Boolean) = prefs(c).edit().putBoolean("wake_presence", on).apply()
+
   /** The home screen's "hey" button opens Muse push-to-talk instead of the stock assistant. */
   fun heyButton(c: Context): Boolean = prefs(c).getBoolean("hey_button", true)
 
   fun setHeyButton(c: Context, on: Boolean) = prefs(c).edit().putBoolean("hey_button", on).apply()
+
+  /** Let Muse open apps, links and control media playback on this Portal. */
+  fun allowApps(c: Context): Boolean = prefs(c).getBoolean("allow_apps", true)
+
+  fun setAllowApps(c: Context, on: Boolean) = prefs(c).edit().putBoolean("allow_apps", on).apply()
+
+  /** Let Muse control the smart home: Home Assistant (when configured) and Philips Hue. */
+  fun allowSmartHome(c: Context): Boolean = prefs(c).getBoolean("allow_smart_home", true)
+
+  fun setAllowSmartHome(c: Context, on: Boolean) = prefs(c).edit().putBoolean("allow_smart_home", on).apply()
+
+  /** Home Assistant base URL, e.g. http://homeassistant.local:8123. */
+  fun haUrl(c: Context): String = prefs(c).getString("ha_url", "")?.trim().orEmpty()
+
+  fun setHaUrl(c: Context, v: String) = prefs(c).edit().putString("ha_url", v.trim()).apply()
+
+  /** A Home Assistant long-lived access token (a secret). */
+  fun haToken(c: Context): String = prefs(c).getString("ha_token", "")?.trim().orEmpty()
+
+  fun setHaToken(c: Context, v: String) = prefs(c).edit().putString("ha_token", v.trim()).apply()
+
+  /** Hue bridge address and application key, set by hue.pair (protocol state, not a setting). */
+  fun hueBridge(c: Context): String = prefs(c).getString("hue_bridge", "").orEmpty()
+
+  fun hueKey(c: Context): String = prefs(c).getString("hue_key", "").orEmpty()
+
+  fun setHue(c: Context, bridge: String, key: String) =
+      prefs(c).edit().putString("hue_bridge", bridge).putString("hue_key", key).apply()
 
   fun sdkToken(c: Context): String? = prefs(c).getString("sdk_token", null)?.takeIf { isValidSdkToken(it) }
 

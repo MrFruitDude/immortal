@@ -109,6 +109,9 @@ object MicOwner {
   /** The camera's audio track: continuous, and the first thing that should yield. */
   const val PRIORITY_STREAM = 10
 
+  /** Alfred's on-device wake-word listener: always yields to everything else. */
+  const val PRIORITY_WAKE = 5
+
   private val lock = Any()
   private var current: String? = null
   private var currentPriority = 0

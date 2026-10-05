@@ -311,6 +311,20 @@
         <!-- What Muse puts on the screen (display.draw_url / show_text). Its own task so it can
              come forward from the background over the photo frame and leave it intact. -->
         <activity
+            android:name=".MuseSettingsActivity"
+            android:exported="false"
+            android:label="Muse settings"
+            android:theme="@style/Theme.SampleApp" />
+        <!-- Muse's canvas: a sandboxed full-screen web view (MuseCanvasActivity docs). -->
+        <activity
+            android:name=".MuseCanvasActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="com.immortal.launcher.muse_canvas"
+            android:hardwareAccelerated="true"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
+        <activity
             android:name=".MuseDisplayActivity"
             android:exported="false"
             android:excludeFromRecents="true"

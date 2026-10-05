@@ -145,10 +145,95 @@ class MuseCommands(private val context: Context) {
               "muted" to p("boolean", "Mute or unmute.")),
           timeoutMs = 20_000))
     }
+    if (MuseConfig.allowDisplay(context)) {
+      c.put("canvas.show", spec(
+          "Use the Portal's ${w}x$h screen as your canvas: render any HTML/CSS/JavaScript/SVG page full " +
+              "screen (dashboards, briefings, photo walls, clocks, animations, games, interactive pages). " +
+              "Inside the page, `portal.send(text)` posts a message back to you as coming from this Portal " +
+              "(so buttons and taps can drive the conversation; at most one per 2 s), `portal.say(text)` " +
+              "speaks on the Portal, `portal.close()` dismisses it. Long-press closes it too. Pages can " +
+              "load anything over https; no access to device files. Replies once the page has loaded.",
+          optional = mapOf(
+              "html" to p("string", "A complete HTML document to render."),
+              "url" to p("string", "Or an http(s) URL to load instead."),
+              "seconds" to p("integer", "How long to keep it up; 0 = until closed. Default 300.")),
+          timeoutMs = 30_000))
+      c.put("canvas.update", spec(
+          "Run JavaScript in the canvas page that's showing (update a live dashboard, advance a slide, " +
+              "animate). Returns the expression's value as JSON.",
+          required = mapOf("js" to p("string", "JavaScript to evaluate in the page.")), timeoutMs = 15_000))
+      c.put("canvas.snapshot", spec(
+          "See what the canvas currently shows: a JPEG screenshot (base64) of the page, to check your work.",
+          timeoutMs = 10_000))
+      c.put("canvas.close", spec("Close the canvas and return to the home screen / photo frame."))
+    }
+    if (MuseConfig.allowApps(context)) {
+      c.put("app.list", spec("List the apps installed on this Portal (name and package)."))
+      c.put("app.launch", spec("Open an app on this Portal by package name or name (e.g. SmartTube, VLC, Jellyfin).",
+          required = mapOf("app" to p("string", "Package name or app name."))))
+      c.put("app.open_url", spec("Open a link on this Portal in the app that handles it (a YouTube link opens " +
+          "in the YouTube app, a web page in the browser).", required = mapOf("url" to p("string", "http(s) link."))))
+      c.put("media.control", spec("Control what's playing on this Portal (any app with a media session).",
+          required = mapOf("action" to p("string", "play_pause, next or previous."))))
+    }
+    c.put("music.radio", spec(
+        "Find an internet radio station by name or genre (e.g. 'BBC Radio 4', 'jazz', 'lofi', 'classical') and " +
+            "play it — on this Portal, or on a Google Cast speaker or speaker group if `host` is given. " +
+            "Returns the station played and alternatives.",
+        required = mapOf("query" to p("string", "Station name or genre.")),
+        optional = mapOf(
+            "host" to p("string", "Play on this Cast device/group instead (from lan.discover)."),
+            "port" to p("integer", "Its Cast port (groups use their own; default 8009)."),
+            "pick" to p("integer", "Which search result to play, 0-based. Default 0.")),
+        timeoutMs = 60_000))
+    if (MuseConfig.allowSmartHome(context)) {
+      if (MuseHomeAssistant.configured(context)) {
+        c.put("ha.states", spec(
+            "Read the smart home from Home Assistant: entities with their state (lights, switches, climate, " +
+                "sensors, locks, media players, …). Filter by domain and/or a search on id or name.",
+            optional = mapOf(
+                "domain" to p("string", "e.g. light, switch, climate, sensor, media_player, cover, lock."),
+                "search" to p("string", "Substring of the entity id or friendly name."),
+                "limit" to p("integer", "Max entities, default 60.")),
+            timeoutMs = 25_000))
+        c.put("ha.call", spec(
+            "Call a Home Assistant service — turn things on/off, set temperatures, run scripts and scenes, " +
+                "lock doors, play media… e.g. domain=light service=turn_on data={entity_id, brightness_pct, rgb_color}.",
+            required = mapOf("domain" to p("string", "Service domain."), "service" to p("string", "Service name.")),
+            optional = mapOf("data" to p("object", "Service data, including entity_id.")),
+            timeoutMs = 25_000))
+      }
+      c.put("hue.pair", spec(
+          "Connect to the Philips Hue bridge on this network. The first call asks the user to press the " +
+              "bridge's link button; call again within 30 s to finish. Only needed once.",
+          optional = mapOf("host" to p("string", "Bridge IP if discovery doesn't find it.")), timeoutMs = 20_000))
+      if (MuseHue.paired(context)) {
+        c.put("hue.lights", spec("List Hue lights (on, brightness), rooms and scenes.", timeoutMs = 15_000))
+        c.put("hue.set", spec(
+            "Control Hue lights: a light or a room (by id or name), or every light if neither is given. " +
+                "Turn on/off, brightness 0-100, colour as #rrggbb, white temperature in kelvin, or recall a scene id.",
+            optional = mapOf(
+                "light" to p("string", "Light id or name."),
+                "room" to p("string", "Room/zone id or name."),
+                "on" to p("boolean", "On or off."),
+                "brightness" to p("integer", "0-100."),
+                "color" to p("string", "#rrggbb."),
+                "kelvin" to p("integer", "2000-6500."),
+                "scene" to p("string", "Scene id (from hue.lights), with room."),
+                "transition_ms" to p("integer", "Fade time.")),
+            timeoutMs = 15_000))
+      }
+    }
     return c
   }
 
-  fun run(command: String, params: JSONObject, timeoutMs: Long?): JSONObject =
+  fun run(command: String, params: JSONObject, timeoutMs: Long?): JSONObject {
+    val result = dispatch(command, params)
+    MuseActionLog.record(command, params, result)
+    return result
+  }
+
+  private fun dispatch(command: String, params: JSONObject): JSONObject =
       try {
         when (command) {
           "device.health" -> ok(health())
@@ -190,6 +275,47 @@ class MuseCommands(private val context: Context) {
                   if (params.has("muted")) params.getBoolean("muted") else null)
             }
           }
+          "canvas.show" -> displayOnly {
+            val err = MuseCanvasActivity.show(context, params.optString("html").ifEmpty { null },
+                params.optString("url").ifEmpty { null }, params.optInt("seconds", 300).coerceIn(0, 86_400))
+            if (err == null) ok(JSONObject().put("shown", true)) else error(err)
+          }
+          "canvas.update" -> displayOnly {
+            MuseCanvasActivity.evaluate(params.getString("js"))?.let { ok(JSONObject().put("result", it)) }
+                ?: error("no canvas is showing; use canvas.show first")
+          }
+          "canvas.snapshot" -> displayOnly {
+            MuseCanvasActivity.snapshot()?.let { ok(JSONObject().put("mime_type", "image/jpeg").put("data_base64", it)) }
+                ?: error("no canvas is showing")
+          }
+          "canvas.close" -> {
+            MuseCanvasActivity.close()
+            ok(JSONObject())
+          }
+          "app.list" -> appsOnly { ok(MuseApps.list(context)) }
+          "app.launch" -> appsOnly { ok(MuseApps.launch(context, params.getString("app"))) }
+          "app.open_url" -> appsOnly { ok(MuseApps.open(context, params.getString("url"))) }
+          "media.control" -> appsOnly {
+            when (params.getString("action")) {
+              "play_pause", "play", "pause" -> NowPlayingHub.playPause()
+              "next" -> NowPlayingHub.next()
+              "previous" -> NowPlayingHub.previous()
+              else -> return error("action must be play_pause, next or previous")
+            }
+            ok(JSONObject())
+          }
+          "music.radio" -> radio(params)
+          "ha.states" -> smartHome {
+            ok(MuseHomeAssistant.states(context, params.optString("domain").ifEmpty { null },
+                params.optString("search").ifEmpty { null }, params.optInt("limit", 60).coerceIn(1, 300)))
+          }
+          "ha.call" -> smartHome {
+            ok(MuseHomeAssistant.callService(context, params.getString("domain"), params.getString("service"),
+                params.optJSONObject("data") ?: JSONObject()))
+          }
+          "hue.pair" -> smartHome { ok(MuseHue.pair(context, params.optString("host").ifEmpty { null })) }
+          "hue.lights" -> smartHome { ok(MuseHue.lights(context)) }
+          "hue.set" -> smartHome { ok(MuseHue.set(context, params)) }
           else -> error("unsupported command: $command")
         }
       } catch (e: Exception) {
@@ -321,6 +447,32 @@ class MuseCommands(private val context: Context) {
     return cast(params) { it.play(url, "audio/wav", "Muse", live = false) }
   }
 
+  private fun radio(params: JSONObject): JSONObject {
+    val found = MuseRadio.search(params.getString("query"))
+    if (found.isEmpty()) return error("no station found for '${params.getString("query")}'")
+    val st = found[params.optInt("pick", 0).coerceIn(0, found.size - 1)]
+    val host = params.optString("host")
+    val played = if (host.isNotEmpty()) {
+      if (!MuseConfig.allowLan(context)) return error("home-network access is turned off on this Portal")
+      MuseCast(host, params.optInt("port", 8009)).use { it.connect().play(st.url, MuseRadio.mime(st.codec), st.name, live = true) }
+      "cast to $host"
+    } else {
+      MuseAudio.playAndWaitStart(context, st.url)?.let { return error(it) }
+      "this Portal"
+    }
+    val alternatives = org.json.JSONArray(found.map { JSONObject().put("name", it.name).put("tags", it.tags).put("country", it.country) })
+    return ok(JSONObject().put("playing", st.name).put("on", played).put("alternatives", alternatives))
+  }
+
+  private inline fun displayOnly(block: () -> JSONObject): JSONObject =
+      if (!MuseConfig.allowDisplay(context)) error("showing things on screen is turned off on this Portal") else block()
+
+  private inline fun appsOnly(block: () -> JSONObject): JSONObject =
+      if (!MuseConfig.allowApps(context)) error("apps & media control is turned off on this Portal") else block()
+
+  private inline fun smartHome(block: () -> JSONObject): JSONObject =
+      if (!MuseConfig.allowSmartHome(context)) error("smart home control is turned off on this Portal") else block()
+
   private inline fun lanOnly(block: () -> JSONObject): JSONObject =
       if (!MuseConfig.allowLan(context)) error("home-network access is turned off on this Portal") else block()
 
@@ -364,12 +516,53 @@ class MuseCommands(private val context: Context) {
   }
 }
 
+/**
+ * What Muse did on this Portal: the last 80 commands, newest first, with a short, secret-free
+ * summary (hosts and lengths, never message text or tokens). Shown in Muse settings so nothing
+ * Muse does here is invisible.
+ */
+object MuseActionLog {
+  data class Entry(val at: Long, val command: String, val ok: Boolean, val summary: String)
+
+  private val entries = java.util.concurrent.ConcurrentLinkedDeque<Entry>()
+
+  fun all(): List<Entry> = entries.toList()
+
+  fun record(command: String, params: JSONObject, result: JSONObject) {
+    val ok = result.optBoolean("ok")
+    entries.addFirst(Entry(System.currentTimeMillis(), command, ok, if (ok) summarize(params) else result.optString("error").take(120)))
+    while (entries.size > 80) entries.pollLast()
+  }
+
+  internal fun summarize(p: JSONObject): String {
+    val parts = ArrayList<String>()
+    p.optString("host").takeIf { it.isNotEmpty() }?.let { parts += it }
+    p.optString("url").takeIf { it.isNotEmpty() }?.let { u -> runCatching { java.net.URL(u).host }.getOrNull()?.let { parts += it } }
+    p.optString("action").takeIf { it.isNotEmpty() }?.let { parts += it }
+    p.optString("entity_id").takeIf { it.isNotEmpty() }?.let { parts += it }
+    p.optString("package").takeIf { it.isNotEmpty() }?.let { parts += it }
+    if (p.has("volume")) parts += "volume ${p.opt("volume")}"
+    p.optString("text").takeIf { it.isNotEmpty() }?.let { parts += "${it.length} chars" }
+    p.optString("html").takeIf { it.isNotEmpty() }?.let { parts += "${it.length} B page" }
+    return parts.joinToString(" · ")
+  }
+}
+
 /** The Portal's text-to-speech engine, shared by Muse replies, speaker.say and cast.say. */
 object MuseSpeech {
   private const val TAG = "MuseSpeech"
   @Volatile private var tts: TextToSpeech? = null
   @Volatile private var ready = false
   private val waiters = ConcurrentHashMap<String, CountDownLatch>()
+  private val active = java.util.concurrent.atomic.AtomicInteger(0)
+
+  /** True while an utterance is playing (Alfred's mouth moves; the wake word stops listening). */
+  val isSpeaking: Boolean
+    get() = active.get() > 0
+
+  /** When the last word began (TTS range callbacks), for the avatar's mouth. */
+  @Volatile var lastWordAt = 0L
+    private set
   private val initLock = Any()
 
   /** Whether any TTS engine is installed (cheap; doesn't bind one). */
@@ -409,13 +602,26 @@ object MuseSpeech {
       tts!!.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANT)
           .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
       tts!!.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-        override fun onStart(id: String) = Unit
-        override fun onDone(id: String) { waiters.remove(id)?.countDown() }
-        @Deprecated("Deprecated in Java") override fun onError(id: String) { waiters.remove(id)?.countDown() }
-        override fun onStop(id: String, interrupted: Boolean) { waiters.remove(id)?.countDown() }
+        override fun onStart(id: String) {
+          if (waiters.containsKey(id)) active.incrementAndGet()
+        }
+        override fun onDone(id: String) = finished(id)
+        @Deprecated("Deprecated in Java") override fun onError(id: String) = finished(id)
+        override fun onStop(id: String, interrupted: Boolean) = finished(id)
+        override fun onRangeStart(id: String, start: Int, end: Int, frame: Int) {
+          lastWordAt = System.currentTimeMillis()
+        }
       })
       ready = true
       return tts
+    }
+  }
+
+  private fun finished(id: String) {
+    // Synthesis to a file (cast.say) never "starts" playback, so only count down what started.
+    waiters.remove(id)?.let {
+      if (active.get() > 0) active.decrementAndGet()
+      it.countDown()
     }
   }
 
@@ -442,6 +648,7 @@ object MuseSpeech {
     tts?.stop()
     waiters.values.forEach { it.countDown() }
     waiters.clear()
+    active.set(0)
   }
 
   /** Renders [text] to a WAV in the cache; null if there's no engine. */

@@ -114,6 +114,12 @@ class MuseVoiceTurn(
     fun onState(state: State, message: String = "")
 
     fun onReply(text: String)
+
+    /** Live input level 0..1 while listening (drives the avatar). */
+    fun onLevel(level: Float) {}
+
+    /** The voice note is on its way, [seconds] long. */
+    fun onNoteSent(seconds: Double) {}
   }
 
   enum class State { LISTENING, SENDING, THINKING, SPEAKING, DONE, FAILED }
@@ -129,8 +135,12 @@ class MuseVoiceTurn(
   @Volatile private var failure: String? = null
   private val lock = Object()
   private val spoken = HashSet<String>()
+  // The note being streamed: PCM staged here and flushed in whole base64 groups.
+  private val stage = ByteArrayOutputStream()
+  private var pcmBytes = 0
+  private var startedAt = 0L
 
-  /** Starts recording and streaming; returns false (after reporting why) if it can't. */
+  /** Push-to-talk: opens the mic and streams until [end]; false (after reporting why) if it can't. */
   @SuppressLint("MissingPermission") // RECORD_AUDIO is granted at install on API 28/29 Portals
   fun begin(): Boolean {
     if (!MicOwner.acquire(MIC_OWNER, MicOwner.PRIORITY_NOTE)) return fail("the microphone is busy (${MicOwner.holder})")
@@ -143,17 +153,44 @@ class MuseVoiceTurn(
       MicOwner.release(MIC_OWNER)
       return fail("couldn't open the microphone")
     }
-    chatStream = link.openRequest("POST", "/chat/stream", headers("application/json", "application/json"),
-        noteHead(nodeId).toByteArray(), false) { onChatFrame(it) }
-    if (chatStream == 0L) {
+    if (!openNote()) {
       rec.release()
       MicOwner.release(MIC_OWNER)
-      return fail("can't reach Muse")
+      return false
     }
-    recording.set(true)
-    listener.onState(State.LISTENING)
     Thread({ record(rec) }, "muse-voice-mic").start()
     return true
+  }
+
+  /**
+   * Wake word: the caller owns the microphone and pushes audio with [feed] (starting with the
+   * [preroll] it kept), then [finish]es when the speaker stops. Non-blocking.
+   */
+  fun beginExternal(preroll: ByteArray): Boolean {
+    if (!openNote()) return false
+    return feed(preroll, 0, preroll.size)
+  }
+
+  /** Adds captured PCM to the note; false if the upload can't keep up (the turn has failed). */
+  fun feed(pcm: ByteArray, off: Int, len: Int): Boolean {
+    if (!recording.get() || cancelled.get()) return false
+    val n = minOf(len, MAX_NOTE_BYTES - pcmBytes)
+    if (n <= 0) return true
+    stage.write(pcm, off, n)
+    pcmBytes += n
+    listener.onLevel(level(pcm, off, n))
+    if (stage.size() >= PART_BYTES && !flush(stage, last = false)) {
+      recording.set(false)
+      finish("can't keep up with Muse")
+      return false
+    }
+    return true
+  }
+
+  /** Wake word: the speaker stopped; send the rest and await the reply on a worker thread. */
+  fun finishExternal() {
+    if (!recording.getAndSet(false)) return
+    Thread({ sendNote() }, "muse-voice-send").start()
   }
 
   /** Release: stop recording; the rest is sent and the reply awaited on a worker thread. */
@@ -170,21 +207,25 @@ class MuseVoiceTurn(
     synchronized(lock) { lock.notifyAll() }
   }
 
-  private fun record(rec: AudioRecord) {
-    val started = System.currentTimeMillis()
-    var pcmBytes = 0
-    // Base64 needs whole 3-byte groups until the last chunk; stage PCM and flush in multiples.
-    val stage = ByteArrayOutputStream()
+  private fun openNote(): Boolean {
+    chatStream = link.openRequest("POST", "/chat/stream", headers("application/json", "application/json"),
+        noteHead(nodeId).toByteArray(), false) { onChatFrame(it) }
+    if (chatStream == 0L) return fail("can't reach Muse")
     stage.write(wavHeader(RATE))
+    startedAt = System.currentTimeMillis()
+    recording.set(true)
+    listener.onState(State.LISTENING)
+    return true
+  }
+
+  private fun record(rec: AudioRecord) {
     val buf = ByteArray(RATE / 10 * 2) // 100 ms
     try {
       rec.startRecording()
       while (recording.get() && pcmBytes < MAX_NOTE_BYTES) {
         val n = rec.read(buf, 0, buf.size)
         if (n <= 0) continue
-        stage.write(buf, 0, n)
-        pcmBytes += n
-        if (stage.size() >= PART_BYTES && !flush(stage, last = false)) return finish("can't keep up with Muse")
+        if (!feed(buf, 0, n)) return
       }
     } finally {
       runCatching { rec.stop() }
@@ -192,6 +233,10 @@ class MuseVoiceTurn(
       MicOwner.release(MIC_OWNER)
       recording.set(false)
     }
+    sendNote()
+  }
+
+  private fun sendNote() {
     if (cancelled.get()) return
     if (pcmBytes < RATE * 2 * 3 / 10) {
       link.cancel(chatStream)
@@ -202,7 +247,8 @@ class MuseVoiceTurn(
     subStream = link.openRequest("POST", "/chat/subscribe", headers("application/json", "application/x-ndjson"),
         "{}".toByteArray(), true) { onSubFrame(it) }
     if (subStream == 0L || !flush(stage, last = true)) return finish("can't reach Muse")
-    Log.i(TAG, "voice note sent: ${pcmBytes / (RATE * 2.0)}s in ${System.currentTimeMillis() - started}ms")
+    Log.i(TAG, "voice note sent: ${pcmBytes / (RATE * 2.0)}s in ${System.currentTimeMillis() - startedAt}ms")
+    listener.onNoteSent(pcmBytes / (RATE * 2.0))
     listener.onState(State.THINKING)
     awaitReplies()
   }
@@ -233,6 +279,7 @@ class MuseVoiceTurn(
     }
     if (subStream != 0L) link.cancel(subStream)
     if (cancelled.get()) return
+    Log.i(TAG, "turn settled: ${tracker.messages.size} replies, failure=$failure")
     failure?.let { return finish(it) }
     // Let the last spoken reply finish before reporting done.
     while (speaking.get() && !cancelled.get()) Thread.sleep(100)
@@ -259,7 +306,11 @@ class MuseVoiceTurn(
   private fun onChatFrame(f: MuseFrame) {
     when (f) {
       is MuseFrame.Response -> {
-        if (f.status >= 400) setFailure("Muse refused the voice note (HTTP ${f.status})")
+        Log.i(TAG, "chat/stream: HTTP ${f.status}")
+        if (f.status >= 400) {
+          Log.w(TAG, "chat/stream refused: ${String(f.body, Charsets.UTF_8).take(300)}")
+          setFailure("Muse refused the voice note (HTTP ${f.status})")
+        }
         ackBuf.write(f.body)
         if (f.endBody) ack()
       }
@@ -267,23 +318,31 @@ class MuseVoiceTurn(
         ackBuf.write(f.data)
         if (f.endBody) ack()
       }
-      is MuseFrame.Reset -> if (!acked) setFailure("voice note dropped: ${f.reason}")
+      is MuseFrame.Reset -> {
+        Log.w(TAG, "chat/stream reset: ${f.reason}")
+        if (!acked) setFailure("voice note dropped: ${f.reason}")
+      }
     }
   }
 
   private fun ack() {
     tracker.onAck(String(ackBuf.toByteArray(), Charsets.UTF_8))
     acked = true
+    Log.i(TAG, "chat ack: note=${tracker.noteId.ifEmpty { "?" }} parent=${tracker.parentId.ifEmpty { "-" }} (${ackBuf.size()} bytes)")
   }
 
   private fun onSubFrame(f: MuseFrame) {
     val data = when (f) {
       is MuseFrame.Response -> {
+        Log.i(TAG, "chat/subscribe: HTTP ${f.status}")
         if (f.status >= 400) return setFailure("Muse refused the reply stream (HTTP ${f.status})")
         f.body
       }
       is MuseFrame.Body -> f.data
-      is MuseFrame.Reset -> return
+      is MuseFrame.Reset -> {
+        Log.w(TAG, "chat/subscribe reset: ${f.reason}")
+        return
+      }
     }
     subBuf.write(data)
     val bytes = subBuf.toByteArray()
@@ -294,6 +353,11 @@ class MuseVoiceTurn(
       start = i + 1
       if (line.isEmpty()) continue
       val obj = runCatching { JSONObject(line) }.getOrNull() ?: continue
+      // Event names and ids only — never message text.
+      val pl = obj.optJSONObject("payload")
+      Log.i(TAG, "sub: type=${obj.optString("type")} event=${obj.optString("event")} seq=${obj.opt("seq")} " +
+          "msg=${pl?.optString("message_id")?.ifEmpty { pl.optString("id") }} reply_to=${pl?.optString("reply_to_message_id")}" +
+          " parent=${pl?.optString("parent_message_id")} keys=${pl?.keys()?.asSequence()?.toList()}")
       synchronized(lock) {
         tracker.onLine(obj)?.let { onReplyDone(it) }
         lock.notifyAll()
@@ -319,6 +383,7 @@ class MuseVoiceTurn(
   }
 
   private fun finish(msg: String) {
+    Log.w(TAG, "turn failed: $msg")
     if (!cancelled.get()) listener.onState(State.FAILED, msg)
   }
 
@@ -337,6 +402,22 @@ class MuseVoiceTurn(
     const val TURN_CAP_MS = 5 * 60_000L
     const val MAX_LINE = 256 * 1024
     const val NOTE_TAIL = "\"}]}"
+
+    /** RMS of 16-bit PCM, mapped to 0..1 on a soft log-ish curve for display. */
+    fun level(pcm: ByteArray, off: Int, len: Int): Float {
+      var sum = 0.0
+      var n = 0
+      var i = off
+      while (i + 1 < off + len) {
+        val v = (pcm[i].toInt() and 0xff) or (pcm[i + 1].toInt() shl 8)
+        sum += v.toDouble() * v
+        n++
+        i += 2
+      }
+      if (n == 0) return 0f
+      val rms = Math.sqrt(sum / n)
+      return (rms / 6000.0).coerceIn(0.0, 1.0).let { Math.sqrt(it) }.toFloat()
+    }
 
     fun noteHead(nodeId: String) =
         "{\"message\":\"\",\"output_modality\":\"text\",\"device_id\":\"$nodeId\",\"items\":[{\"type\":\"file\"," +

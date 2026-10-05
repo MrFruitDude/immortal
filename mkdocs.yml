@@ -84,6 +84,7 @@ nav:
   - Hardware limitations: limitations.md
   - For developers:
       - Releasing: releasing.md
+      - Running your own fork: fork.md
       - Submitting an app: submitting-apps.md
   - Design notes:
       - Multi-room audio: design/multi-room-audio.md

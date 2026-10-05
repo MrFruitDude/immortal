@@ -1348,6 +1348,20 @@ object SettingsDomains {
                       set = MuseConfig::setSpeakReplies,
                       help = "Read Muse's answers aloud with this Portal's text-to-speech voice."),
                   BoolSpec(
+                      "wakeWord",
+                      "“Hey Alfred”",
+                      get = { it.wakeWord },
+                      set = MuseConfig::setWakeWord,
+                      help = "Listen for the wake word on this Portal. Detection is on-device; audio only " +
+                          "goes to Muse after the wake word, until you stop talking."),
+                  BoolSpec(
+                      "wakeOnlyWhenPresent",
+                      "Only when someone's here",
+                      get = { it.wakeOnlyWhenPresent },
+                      set = MuseConfig::setWakeOnlyWhenPresent,
+                      help = "Stop listening when the Portal's presence sensing says the room is empty.",
+                      visible = { _, s -> s.wakeWord }),
+                  BoolSpec(
                       "heyButton",
                       "Hey button opens Muse",
                       get = { it.heyButton },
@@ -1378,9 +1392,42 @@ object SettingsDomains {
                       help = "Let Muse find and control devices on your Wi-Fi through this Portal: " +
                           "Google Home / Nest speakers (Cast), and local APIs like Hue or Shelly. " +
                           "Private addresses only."),
+                  BoolSpec(
+                      "allowApps",
+                      "Apps & media",
+                      get = { it.allowApps },
+                      set = MuseConfig::setAllowApps,
+                      help = "Let Muse open apps and links here, and play, pause or skip what's playing."),
+                  BoolSpec(
+                      "allowSmartHome",
+                      "Smart home control",
+                      get = { it.allowSmartHome },
+                      set = MuseConfig::setAllowSmartHome,
+                      help = "Let Muse control Home Assistant (below) and pair with a Philips Hue bridge."),
+                  StringSpec(
+                      "haUrl",
+                      "Home Assistant URL",
+                      get = { it.haUrl },
+                      set = MuseConfig::setHaUrl,
+                      help = "e.g. http://homeassistant.local:8123",
+                      visible = { _, s -> s.allowSmartHome }),
+                  StringSpec(
+                      "haToken",
+                      "Home Assistant token",
+                      get = { it.haToken },
+                      set = MuseConfig::setHaToken,
+                      secret = true,
+                      help = "A long-lived access token (your HA profile › Security).",
+                      visible = { _, s -> s.allowSmartHome }),
               ),
           sections =
               mapOf(
+                  "wakeWord" to "Voice",
+                  "wakeOnlyWhenPresent" to "Voice",
+                  "allowApps" to "What Muse may do",
+                  "allowSmartHome" to "Smart home",
+                  "haUrl" to "Smart home",
+                  "haToken" to "Smart home",
                   "speakReplies" to "Voice",
                   "heyButton" to "Voice",
                   "allowDisplay" to "What Muse may do",
@@ -1390,6 +1437,7 @@ object SettingsDomains {
           onApplied = { c, _ ->
             MuseService.sync(c)
             MuseService.reconnect(c)
+            com.immortal.launcher.AlfredWake.sync(c)
           },
           defaults = { MuseConfig.Settings() },
       )

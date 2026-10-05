@@ -130,6 +130,31 @@ class MuseVoiceTest {
   }
 
   @Test
+  fun wakePhrase_needsTheWholePhrase() {
+    assertTrue(AlfredWake.isWakePhrase("hey alfred"))
+    assertTrue(AlfredWake.isWakePhrase("[unk] hey alfred"))
+    assertFalse(AlfredWake.isWakePhrase("alfred"))
+    assertFalse(AlfredWake.isWakePhrase("hey"))
+    assertFalse(AlfredWake.isWakePhrase("hey alfredo"))
+  }
+
+  @Test
+  fun hueColour_mapsPrimariesIntoTheGamut() {
+    val (rx, ry) = MuseHue.xy("#ff0000")
+    assertTrue(rx > 0.6 && ry < 0.35)
+    val (bx, by) = MuseHue.xy("#0000ff")
+    assertTrue(bx < 0.2 && by < 0.1)
+    assertEquals(0.3127, MuseHue.xy("#000000").first, 1e-4)
+  }
+
+  @Test
+  fun actionLog_summaryNeverCarriesSecretsOrText() {
+    val s = MuseActionLog.summarize(JSONObject().put("url", "http://10.0.0.5:8123/api/x?token=abc").put("text", "my secret plans")
+        .put("headers", JSONObject().put("Authorization", "Bearer xyz")))
+    assertEquals("10.0.0.5 · 15 chars", s)
+  }
+
+  @Test
   fun lan_onlyPrivateAddressesCount() {
     assertTrue(isPrivateLan(InetAddress.getByName("10.0.0.84")))
     assertTrue(isPrivateLan(InetAddress.getByName("192.168.1.2")))
