@@ -1,6 +1,6 @@
 {
-  "versionCode": 71,
-  "versionName": "1.77",
+  "versionCode": 72,
+  "versionName": "1.78",
   "apkUrl": "https://github.com/MrFruitDude/immortal/releases/latest/download/immortal.apk",
-  "notes": "Alfred can play music through Music Assistant (Spotify and your library on any speaker, group or Portal). The app list and store keep retrying the online catalog if Wi-Fi isn't up yet at start."
+  "notes": "Immortal now installs its own updates automatically while the Portal isn't in use (Settings > Install updates automatically), and fleetctl update --self updates a Portal on demand."
 }
