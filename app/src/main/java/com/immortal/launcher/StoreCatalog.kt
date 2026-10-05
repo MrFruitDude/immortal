@@ -74,17 +74,28 @@ object StoreCatalog {
               .onFailure { android.util.Log.w(TAG, "bundled catalog failed", it) }
               .getOrDefault(emptyList())
       if (bundled.isNotEmpty()) main.post { onResult(bundled) }
+      fetchRemote(bundled.size, 0, onResult)
+    }
+  }
 
-      // Then refresh from the hosted catalog if reachable and newer-shaped.
-      val remote =
-          runCatching { httpGet(CATALOG_URL) }
-              .onFailure { android.util.Log.w(TAG, "remote catalog fetch failed", it) }
-              .mapCatching { parse(it) }
-              .onFailure { android.util.Log.w(TAG, "remote catalog parse failed", it) }
-              .getOrDefault(emptyList())
-      android.util.Log.i(TAG, "catalog loaded: bundled=${bundled.size} remote=${remote.size}")
-      if (remote.isNotEmpty()) main.post { onResult(remote) }
-      else if (bundled.isEmpty()) main.post { onResult(emptyList()) }
+  /** Delays before re-trying the hosted catalog (e.g. Wi-Fi not up yet right after boot). */
+  private val REMOTE_RETRY_S = longArrayOf(15, 60, 300)
+  private val retry by lazy { Executors.newSingleThreadScheduledExecutor() }
+
+  /** Refreshes from the hosted catalog; on failure retries in the background, then keeps the bundled one. */
+  private fun fetchRemote(bundledSize: Int, attempt: Int, onResult: (List<CatalogApp>) -> Unit) {
+    val remote =
+        runCatching { httpGet(CATALOG_URL) }
+            .onFailure { android.util.Log.w(TAG, "remote catalog fetch failed", it) }
+            .mapCatching { parse(it) }
+            .onFailure { android.util.Log.w(TAG, "remote catalog parse failed", it) }
+            .getOrDefault(emptyList())
+    android.util.Log.i(TAG, "catalog loaded: bundled=$bundledSize remote=${remote.size}")
+    when {
+      remote.isNotEmpty() -> main.post { onResult(remote) }
+      attempt < REMOTE_RETRY_S.size ->
+          retry.schedule({ io.execute { fetchRemote(bundledSize, attempt + 1, onResult) } }, REMOTE_RETRY_S[attempt], java.util.concurrent.TimeUnit.SECONDS)
+      bundledSize == 0 -> main.post { onResult(emptyList()) }
     }
   }
 
