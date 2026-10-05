@@ -74,7 +74,8 @@ class MuseWebSocket private constructor(private val socket: Socket) {
       }
       mask?.let { m -> for (i in payload.indices) payload[i] = (payload[i].toInt() xor m[i % 4].toInt()).toByte() }
       when (opcode) {
-        0x0, 0x2, 0x1 -> {
+        0x1 -> msg.reset() // text frames carry nothing on the Noise channel; the SDK ignores them
+        0x0, 0x2 -> {
           msg.write(payload)
           if (msg.size() > MAX_MESSAGE) throw IOException("message too large")
           if (fin) return msg.toByteArray()
@@ -85,8 +86,12 @@ class MuseWebSocket private constructor(private val socket: Socket) {
     }
   }
 
+  /**
+   * Closes the TCP connection without touching the write lock, so it never waits behind a send
+   * stalled on a full socket buffer (and is safe from the main thread). No close frame: the
+   * server treats a dropped connection the same.
+   */
   fun close() {
-    runCatching { sendFrame(0x88, ByteArray(0)) }
     runCatching { socket.close() }
   }
 
@@ -130,6 +135,15 @@ class MuseWebSocket private constructor(private val socket: Socket) {
       val host = u.host
       val port = if (u.port > 0) u.port else 443
       val raw = Socket()
+      try {
+        return upgrade(raw, u, host, port, headers, timeoutMs)
+      } catch (e: Exception) {
+        runCatching { raw.close() }
+        throw e
+      }
+    }
+
+    private fun upgrade(raw: Socket, u: URL, host: String, port: Int, headers: Map<String, String>, timeoutMs: Int): MuseWebSocket {
       raw.connect(InetSocketAddress(host, port), timeoutMs)
       val ssl = (SSLSocketFactory.getDefault() as SSLSocketFactory).createSocket(raw, host, port, true) as SSLSocket
       ssl.soTimeout = timeoutMs

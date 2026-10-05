@@ -513,6 +513,8 @@ class MuseSetupController(
 
   private val assembler = MuseBleFraming.Assembler()
   private val inbox = LinkedBlockingQueue<ByteArray>()
+  /** Stop marker, compared by identity: no message from the phone can ever be it. */
+  private val stopMarker = ByteArray(0)
   private val txLock = Any()
   private val stateLock = Any()
   private var plaintextBlocked = false
@@ -520,7 +522,7 @@ class MuseSetupController(
   private var worker: Thread? = null
 
   fun onWrite(packet: ByteArray) {
-    synchronized(assembler) { assembler.feed(packet) }?.let { inbox.put(it) }
+    synchronized(assembler) { assembler.feed(packet) }?.takeIf { it.isNotEmpty() }?.let { inbox.put(it) }
   }
 
   fun onDisconnect() {
@@ -536,7 +538,7 @@ class MuseSetupController(
               try {
                 while (true) {
                   val m = inbox.take()
-                  if (m.isEmpty()) break
+                  if (m === stopMarker) break
                   runCatching { handleMessage(m) }.onFailure { Log.w(TAG, "setup command failed", it) }
                 }
               } catch (_: InterruptedException) {}
@@ -548,7 +550,7 @@ class MuseSetupController(
   }
 
   fun stop() {
-    inbox.put(ByteArray(0))
+    inbox.put(stopMarker)
   }
 
   fun handleMessage(raw: ByteArray, decrypted: Boolean = false) {

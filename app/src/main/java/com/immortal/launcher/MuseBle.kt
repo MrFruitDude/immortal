@@ -47,6 +47,7 @@ class MuseBle(
     private val localName: String,
     private val onWrite: (ByteArray) -> Unit,
     private val onDisconnect: () -> Unit,
+    private val onAdvertiseFailed: (Int) -> Unit = {},
 ) : MuseSetupController.Transport {
 
   private val manager = context.getSystemService(BluetoothManager::class.java)
@@ -69,6 +70,7 @@ class MuseBle(
 
     override fun onStartFailure(errorCode: Int) {
       Log.e(TAG, "advertising failed: $errorCode")
+      onAdvertiseFailed(errorCode)
     }
   }
 
@@ -81,20 +83,26 @@ class MuseBle(
         else -> null
       }
 
-  /** Brings the radio up if needed, opens the GATT server and starts advertising. */
-  fun start(): Boolean {
-    val a = adapter ?: return false
+  /**
+   * Brings the radio up if needed, opens the GATT server and starts advertising. Returns null on
+   * success or why it couldn't; on failure the caller must still call [stop] to undo whatever
+   * was already changed (radio power, adapter name, GATT server). Blocking: call off main.
+   */
+  fun start(): String? {
+    val a = adapter ?: return "no Bluetooth adapter"
     if (!a.isEnabled) {
       @Suppress("DEPRECATION")
-      if (!a.enable()) return false.also { Log.e(TAG, "couldn't turn Bluetooth on") }
+      if (!a.enable()) return "couldn't turn Bluetooth on"
       enabledByUs = true
-      val until = System.currentTimeMillis() + 8_000
-      while (!a.isEnabled && System.currentTimeMillis() < until) Thread.sleep(100)
-      if (!a.isEnabled) return false
+      if (!waitFor(8_000) { a.isEnabled }) return "Bluetooth didn't come on"
     }
+    if (!a.isMultipleAdvertisementSupported) return "Bluetooth LE advertising isn't supported"
     savedName = a.name
     runCatching { a.name = localName }
-    val s = manager!!.openGattServer(context, callback) ?: return false.also { Log.e(TAG, "openGattServer failed") }
+    // setName is asynchronous, and the scan response reads the adapter name when advertising
+    // starts: wait for it, or the Muse app would see the old name all window long.
+    if (!waitFor(3_000) { a.name == localName }) Log.w(TAG, "adapter name still '${a.name}'")
+    val s = manager!!.openGattServer(context, callback) ?: return "couldn't open the GATT server"
     server = s
     val service = BluetoothGattService(SERVICE_UUID, BluetoothGattService.SERVICE_TYPE_PRIMARY)
     service.addCharacteristic(
@@ -110,7 +118,7 @@ class MuseBle(
     service.addCharacteristic(t)
     tx = t
     s.addService(service)
-    val advertiser = a.bluetoothLeAdvertiser ?: return false.also { Log.e(TAG, "no LE advertiser") }
+    val advertiser = a.bluetoothLeAdvertiser ?: return "no Bluetooth LE advertiser"
     val settings = AdvertiseSettings.Builder()
         .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
         .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
@@ -125,6 +133,15 @@ class MuseBle(
         .build()
     val scanResponse = AdvertiseData.Builder().setIncludeDeviceName(true).build()
     advertiser.startAdvertising(settings, data, scanResponse, advertiseCallback)
+    return null
+  }
+
+  private fun waitFor(ms: Long, cond: () -> Boolean): Boolean {
+    val until = System.currentTimeMillis() + ms
+    while (!cond()) {
+      if (System.currentTimeMillis() > until) return false
+      Thread.sleep(100)
+    }
     return true
   }
 
@@ -135,6 +152,7 @@ class MuseBle(
     runCatching { server?.close() }
     server = null
     savedName?.let { n -> runCatching { a.name = n } }
+    savedName = null
     @Suppress("DEPRECATION")
     if (enabledByUs) runCatching { a.disable() }
     enabledByUs = false

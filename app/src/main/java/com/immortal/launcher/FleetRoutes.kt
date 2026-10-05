@@ -522,11 +522,7 @@ class FleetRoutes(private val context: Context) {
               MuseConfig.setEnabled(context, body.optBoolean("enabled"))
               MuseService.sync(context)
             }
-            if (body.optBoolean("unpair")) {
-              MuseRuntime.closePairing()
-              MuseConfig.clearPairing(context)
-              MuseService.reconnect(context)
-            }
+            if (body.optBoolean("unpair")) MuseRuntime.unpair(context)
             if (body.optBoolean("pair")) {
               MuseService.pair(context)
               out.put("bleName", MuseConfig.identity(context).bleName)

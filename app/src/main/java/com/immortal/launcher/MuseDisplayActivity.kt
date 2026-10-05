@@ -138,19 +138,29 @@ class MuseDisplayActivity : Activity() {
       }
 
       fun take(): Pending? = next.also { next = null }
+
+      /** Drops [p] if it was never picked up, so a later launch can't show something stale. */
+      fun clearIf(p: Pending) {
+        if (next === p) next = null
+      }
     }
   }
 
   companion object {
     private const val MAX_IMAGE_BYTES = 20 * 1024 * 1024
     @Volatile private var current: WeakReference<MuseDisplayActivity>? = null
+    /** One display command at a time (Muse may run several invokes concurrently). */
+    private val displayLock = Any()
 
     /**
      * Prepares [content] (downloads and decodes an image first, so a bad URL is reported rather
      * than shown), brings the screen forward, and waits until it's actually on screen. Returns
      * null on success or an error message. Call off the main thread.
      */
-    fun showAndWait(context: Context, content: Content, seconds: Int): String? {
+    fun showAndWait(context: Context, content: Content, seconds: Int): String? =
+        synchronized(displayLock) { showLocked(context, content, seconds) }
+
+    private fun showLocked(context: Context, content: Content, seconds: Int): String? {
       val drawable =
           when (content) {
             is Content.Image -> try {
@@ -168,7 +178,9 @@ class MuseDisplayActivity : Activity() {
       context.startActivity(
           Intent(context, MuseDisplayActivity::class.java)
               .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION))
-      return if (pending.shown.await(15, TimeUnit.SECONDS)) null else "the screen didn't come forward"
+      if (pending.shown.await(15, TimeUnit.SECONDS)) return null
+      Pending.clearIf(pending)
+      return "the screen didn't come forward"
     }
 
     fun dismiss(context: Context) {

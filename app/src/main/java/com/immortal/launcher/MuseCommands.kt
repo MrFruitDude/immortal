@@ -376,26 +376,36 @@ object MuseSpeech {
   fun available(context: Context): Boolean =
       context.packageManager.queryIntentServices(Intent(TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE), 0).isNotEmpty()
 
+  @Volatile private var defaultLocale: Locale? = null
+
+  /** The shared engine, bound on first use. Blocks up to 10 s: never call on the main thread. */
   private fun engine(context: Context): TextToSpeech? {
     synchronized(initLock) {
       tts?.let { if (ready) return it }
       if (!available(context)) return null
       val latch = CountDownLatch(1)
+      val attempt = java.util.concurrent.atomic.AtomicReference<TextToSpeech?>()
+      val abandoned = java.util.concurrent.atomic.AtomicBoolean(false)
       var status = TextToSpeech.ERROR
-      val main = Handler(Looper.getMainLooper())
-      main.post {
-        tts = TextToSpeech(context.applicationContext) { s ->
+      Handler(Looper.getMainLooper()).post {
+        lateinit var engine: TextToSpeech
+        engine = TextToSpeech(context.applicationContext) { s ->
           status = s
-          latch.countDown()
+          // An init that finishes after we gave up would otherwise leak a bound engine.
+          if (abandoned.get()) engine.shutdown() else latch.countDown()
         }
+        attempt.set(engine)
       }
-      latch.await(10, TimeUnit.SECONDS)
-      if (status != TextToSpeech.SUCCESS) {
+      if (!latch.await(10, TimeUnit.SECONDS) || status != TextToSpeech.SUCCESS) {
+        abandoned.set(true)
         Log.w(TAG, "TTS init failed ($status)")
-        tts?.shutdown()
-        tts = null
+        // Init already answered (failed, or raced the timeout): shut it down here. Otherwise its
+        // own callback will, now that it's marked abandoned.
+        if (latch.count == 0L) attempt.get()?.shutdown()
         return null
       }
+      tts = attempt.get()
+      defaultLocale = runCatching { tts!!.voice?.locale }.getOrNull() ?: Locale.getDefault()
       tts!!.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANT)
           .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
       tts!!.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
@@ -409,8 +419,10 @@ object MuseSpeech {
     }
   }
 
+  /** A per-call language; without one, back to the engine's default (overrides never stick). */
   private fun applyLanguage(t: TextToSpeech, language: String?) {
-    if (!language.isNullOrBlank()) runCatching { t.language = Locale.forLanguageTag(language) }
+    val locale = if (language.isNullOrBlank()) defaultLocale else Locale.forLanguageTag(language)
+    if (locale != null) runCatching { t.language = locale }
   }
 
   /** Speaks [text]; returns null once done, or an error. Blocks (off the main thread). */
@@ -485,7 +497,10 @@ object MuseAudio {
         releaseInternal()
       }
     }
-    latch.await(25, TimeUnit.SECONDS)
+    if (!latch.await(25, TimeUnit.SECONDS)) {
+      // Don't let a slow stream start playing after we've already reported failure.
+      main.post { releaseInternal() }
+    }
     return error
   }
 

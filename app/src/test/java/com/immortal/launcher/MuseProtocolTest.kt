@@ -381,6 +381,28 @@ class MuseProtocolTest {
     assertArrayEquals("{}".toByteArray(), a.feed("{}".toByteArray()))
   }
 
+  @Test
+  fun setup_emptyWritesDontStopTheWorker() {
+    val sent = java.util.concurrent.LinkedBlockingQueue<ByteArray>()
+    val transport = object : MuseSetupController.Transport {
+      override fun sendPackets(packets: List<ByteArray>) = packets.forEach { sent.put(it) }
+      override fun mtu() = 185
+      override fun disconnect(delayMs: Long) = Unit
+    }
+    val net = object : MuseSetupController.Network {
+      override fun isOnline() = true
+      override fun currentConnectionEntry() = JSONObject()
+    }
+    val c = MuseSetupController(device(), MuseIdentity(V.mac), "1.0.0", transport, net, { _, _ -> })
+    c.start()
+    c.onWrite(ByteArray(0)) // a stray 0-byte write
+    c.onWrite(byteArrayOf(0xFE.toByte(), 0, 1)) // a framed empty message
+    c.onWrite("{\"action\":\"get_device_info\"}".toByteArray())
+    val reply = sent.poll(5, java.util.concurrent.TimeUnit.SECONDS)
+    assertNotNull("the worker must still answer after empty writes", reply)
+    c.stop()
+  }
+
   // --- identity -----------------------------------------------------------------
 
   @Test

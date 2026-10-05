@@ -25,6 +25,7 @@ import java.security.cert.X509Certificate
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
+import javax.net.ssl.SSLSocketFactory
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 import org.json.JSONArray
@@ -235,17 +236,28 @@ object MuseLanHttp {
   fun request(params: JSONObject): JSONObject {
     val url = URL(params.getString("url"))
     require(url.protocol == "http" || url.protocol == "https") { "only http:// and https:// URLs" }
-    resolvePrivate(url.host)
+    // Pin the connection to the address vetted here: resolving again at connect time could land
+    // on a public or loopback address (multi-record answers, DNS rebinding).
+    val addr = resolvePrivate(url.host)
     val method = params.optString("method", "GET").uppercase()
-    val conn = url.openConnection() as HttpURLConnection
+    val https = url.protocol == "https"
+    val target =
+        if (https) url
+        else URL("http", if (addr is Inet6Address) "[${addr.hostAddress}]" else addr.hostAddress, url.port, url.file)
+    val conn = target.openConnection() as HttpURLConnection
     try {
       conn.instanceFollowRedirects = false // a redirect could leave the LAN
       conn.connectTimeout = 8_000
       conn.readTimeout = params.optInt("timeout_ms", 15_000).coerceIn(1_000, 60_000)
       conn.requestMethod = method
-      if (conn is HttpsURLConnection && params.optBoolean("insecure_tls", false)) {
-        conn.sslSocketFactory = trustAllContext().socketFactory
-        conn.hostnameVerifier = javax.net.ssl.HostnameVerifier { _, _ -> true }
+      if (!https) conn.setRequestProperty("Host", if (url.port > 0) "${url.host}:${url.port}" else url.host)
+      if (conn is HttpsURLConnection) {
+        val base = if (params.optBoolean("insecure_tls", false)) trustAllContext().socketFactory
+            else HttpsURLConnection.getDefaultSSLSocketFactory()
+        // HTTPS keeps the hostname (SNI, certificate check); instead the connected peer is
+        // re-checked before TLS starts.
+        conn.sslSocketFactory = PrivatePeerSocketFactory(base)
+        if (params.optBoolean("insecure_tls", false)) conn.hostnameVerifier = javax.net.ssl.HostnameVerifier { _, _ -> true }
       }
       params.optJSONObject("headers")?.let { h -> h.keys().forEach { conn.setRequestProperty(it, h.optString(it)) } }
       val body =
@@ -283,6 +295,31 @@ object MuseLanHttp {
       out.write(buf, 0, n)
     }
   }
+}
+
+/** Wraps TLS over an already-connected socket only if its peer is on the private LAN. */
+private class PrivatePeerSocketFactory(private val base: SSLSocketFactory) : SSLSocketFactory() {
+  override fun createSocket(s: java.net.Socket, host: String?, port: Int, autoClose: Boolean): java.net.Socket {
+    val peer = s.inetAddress
+    if (peer == null || !isPrivateLan(peer)) {
+      runCatching { s.close() }
+      throw IOException("refusing a connection that resolved off the home network ($peer)")
+    }
+    return base.createSocket(s, host, port, autoClose)
+  }
+
+  override fun getDefaultCipherSuites(): Array<String> = base.defaultCipherSuites
+
+  override fun getSupportedCipherSuites(): Array<String> = base.supportedCipherSuites
+
+  // Unconnected-socket variants: refuse, so nothing can skip the peer check above.
+  override fun createSocket(host: String?, port: Int) = throw IOException("direct sockets not allowed")
+
+  override fun createSocket(host: String?, port: Int, localHost: InetAddress?, localPort: Int) = throw IOException("direct sockets not allowed")
+
+  override fun createSocket(host: InetAddress?, port: Int) = throw IOException("direct sockets not allowed")
+
+  override fun createSocket(address: InetAddress?, port: Int, localAddress: InetAddress?, localPort: Int) = throw IOException("direct sockets not allowed")
 }
 
 internal fun trustAllContext(): SSLContext =
@@ -463,14 +500,25 @@ class MuseCast(private val host: String, private val port: Int = 8009) : AutoClo
 
   private fun read(): Triple<String, String, JSONObject>? {
     val i = inp ?: throw IOException("not connected")
-    val len = try {
-      i.readInt()
+    val sock = socket ?: throw IOException("not connected")
+    // Only the wait for a frame's first byte may time out quietly (the 1 s poll); once a frame
+    // has started, read the rest under a longer deadline so a partial header is never dropped.
+    val first = try {
+      i.read()
     } catch (_: SocketTimeoutException) {
       return null
     }
-    if (len < 0 || len > 1 shl 20) throw IOException("cast: bad frame length $len")
-    val buf = ByteArray(len)
-    i.readFully(buf)
+    if (first < 0) throw IOException("cast: connection closed")
+    val buf: ByteArray
+    sock.soTimeout = 10_000
+    try {
+      val len = (first shl 24) or (i.readUnsignedByte() shl 16) or (i.readUnsignedByte() shl 8) or i.readUnsignedByte()
+      if (len < 0 || len > 1 shl 20) throw IOException("cast: bad frame length $len")
+      buf = ByteArray(len)
+      i.readFully(buf)
+    } finally {
+      sock.soTimeout = 1_000
+    }
     var src = ""
     var ns = ""
     var text = ""

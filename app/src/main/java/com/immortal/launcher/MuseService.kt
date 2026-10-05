@@ -142,7 +142,13 @@ object MuseRuntime {
   @Volatile private var app: Context? = null
   @Volatile private var loop: Thread? = null
   @Volatile private var running = false
+  /** Bumped by every start/stop; a loop thread only acts while its own generation is current. */
+  @Volatile private var loopGen = 0
   @Volatile private var link: MuseLink? = null
+  /** Guards [loopGen]/[running] against [link] so a session can't be created after [stop]. */
+  private val lifecycle = Any()
+  /** Serializes pairing-record writes (token rotation vs a new pairing vs unpair). */
+  private val pairingLock = Any()
   private val wake = Object()
   private var lastRefreshAttempt = 0L
   private var sdkTokenReported = false
@@ -159,27 +165,35 @@ object MuseRuntime {
   /** The live, registered session, for voice turns and chat. */
   fun currentLink(): MuseLink? = link?.takeIf { it.isRegistered }
 
-  @Synchronized
   fun start(context: Context) {
     app = context.applicationContext
     BuildConfigCompat.versionName =
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "dev"
-    if (running) return
-    running = true
-    sdkTokenReported = false
-    loop = Thread({ runLoop() }, "muse-runtime").apply {
-      isDaemon = true
-      start()
+    synchronized(lifecycle) {
+      if (running) return
+      running = true
+      sdkTokenReported = false
+      val gen = ++loopGen
+      loop = Thread({ runLoop(gen) }, "muse-runtime").apply {
+        isDaemon = true
+        start()
+      }
     }
   }
 
-  @Synchronized
+  /** Never blocks: safe from the main thread (service onDestroy, settings toggles). */
   fun stop() {
-    running = false
+    val old: MuseLink?
+    synchronized(lifecycle) {
+      running = false
+      loopGen++
+      old = link
+      link = null
+      loop?.interrupt()
+      loop = null
+    }
+    old?.stop()
     closePairing()
-    link?.stop()
-    loop?.interrupt()
-    loop = null
     publish(MuseStatus(MuseStatus.State.DISABLED))
   }
 
@@ -191,12 +205,13 @@ object MuseRuntime {
 
   // --- the connection loop -------------------------------------------------------
 
-  private fun runLoop() {
+  private fun runLoop(gen: Int) {
     val c = app ?: return
     var failures = 0
     var floor = 0L
+    fun alive() = running && loopGen == gen
     fun nextDelay(): Long = maxOf(minOf(BACKOFF_BASE_MS shl minOf(failures++, 10), BACKOFF_MAX_MS), floor)
-    while (running) {
+    while (alive()) {
       var pairing = MuseConfig.pairing(c)
       if (pairing == null) {
         if (status.state != MuseStatus.State.PAIRING) publish(MuseStatus(MuseStatus.State.UNPAIRED, "Pair it from the Muse app"))
@@ -212,10 +227,13 @@ object MuseRuntime {
       val (vms, httpStatus) = MuseApi.fetchVms(pairing.accessToken, root)
       if (httpStatus == 401) {
         Log.w(TAG, "device token rejected; refreshing")
-        if (maybeRefresh(c, pairing, force = true) == null) sleep(TOKEN_RETRY_MS)
+        // Back off even when the refresh succeeded: an API that keeps refusing fresh tokens
+        // must not turn this into a hot loop.
+        sleep(if (maybeRefresh(c, pairing, force = true) == null) TOKEN_RETRY_MS else nextDelay())
         continue
       }
       val vm = vms.firstOrNull { it.isDefault } ?: vms.firstOrNull()
+      if (!alive()) return
       if (vm == null) {
         publish(MuseStatus(MuseStatus.State.OFFLINE, if (httpStatus == null) "Can't reach Muse" else "No Muse found for this account"))
         sleep(nextDelay())
@@ -227,11 +245,14 @@ object MuseRuntime {
           vmToken = vm.token,
           register = registerParams(c),
           runCommand = { cmd, params, timeout -> MuseCommands(c).run(cmd, params, timeout) })
-      link = session
+      synchronized(lifecycle) {
+        if (!alive()) return
+        link = session
+      }
       publish(MuseStatus(MuseStatus.State.CONNECTING, "Connecting to ${vm.name.ifEmpty { "Muse" }}", vm.name))
       val watcher = Thread({
         // Flip to CONNECTED once the register reply lands.
-        while (running && link === session) {
+        while (alive() && link === session) {
           if (session.isRegistered) {
             publish(MuseStatus(MuseStatus.State.CONNECTED, "Connected", vm.name, status.pairingUntil))
             return@Thread
@@ -244,10 +265,10 @@ object MuseRuntime {
         MuseLink.Outcome.CLOSED
       }
       watcher.interrupt()
-      link = null
+      synchronized(lifecycle) { if (link === session) link = null }
       val lasted = if (session.registeredAt > 0) System.currentTimeMillis() - session.registeredAt else 0
       Log.i(TAG, "session ended: $outcome after ${lasted / 1000}s")
-      if (!running) return
+      if (!alive()) return
       when (outcome) {
         MuseLink.Outcome.STOPPED -> continue // reconnect() or a settings change
         MuseLink.Outcome.UNPAIRED -> {
@@ -297,13 +318,18 @@ object MuseRuntime {
     val (tokens, httpStatus) = MuseApi.refreshDeviceToken(pairing.refreshToken, identity.nodeId, MuseApi.apiRoot(pairing.apiUrlV2), sdkToken)
     if (tokens != null) {
       val next = pairing.copy(accessToken = tokens.first, refreshToken = tokens.second, savedAtSec = System.currentTimeMillis() / 1000)
-      MuseConfig.savePairing(c, next)
+      synchronized(pairingLock) {
+        // Compare-and-set: an unpair or a fresh pairing that landed meanwhile wins.
+        val current = MuseConfig.pairing(c)
+        if (current?.refreshToken != pairing.refreshToken) return current
+        MuseConfig.savePairing(c, next)
+      }
       Log.i(TAG, "device token rotated")
       return next
     }
     if (!due) return pairing // only reporting the SDK token: never unpair over it
     if (httpStatus == 401) {
-      MuseConfig.clearPairing(c)
+      synchronized(pairingLock) { if (MuseConfig.pairing(c)?.refreshToken == pairing.refreshToken) MuseConfig.clearPairing(c) }
       publish(MuseStatus(MuseStatus.State.UNPAIRED, "Muse revoked the pairing; pair it again"))
       return null
     }
@@ -312,61 +338,78 @@ object MuseRuntime {
 
   // --- pairing window ------------------------------------------------------------
 
-  @Synchronized
+  private val pairingWindowLock = Any()
+  @Volatile private var pairingStarting = false
+
+  /** Opens the BLE pairing window. Blocking (the radio may need seconds): call off the main thread. */
   fun openPairing(context: Context): String? {
     val c = context.applicationContext
     app = c
-    if (ble != null) return null
-    val identity = MuseConfig.identity(c)
-    lateinit var controller: MuseSetupController
-    val transport = MuseBle(c, identity.bleName, onWrite = { controller.onWrite(it) }, onDisconnect = { controller.onDisconnect() })
-    transport.unsupportedReason()?.let {
-      publish(status.copy(detail = "Can't pair: $it"))
-      return it
+    synchronized(pairingWindowLock) {
+      if (ble != null || pairingStarting) return null
+      pairingStarting = true
     }
-    val session = MusePairingSession(identity.nodeId, identity.deviceId, identity.mac, BuildConfigCompat.versionName, MuseConfig.sdkToken(c))
-    controller = MuseSetupController(
-        pairing = session,
-        identity = identity,
-        version = BuildConfigCompat.versionName,
-        transport = transport,
-        network = SetupNetwork(c),
-        provision = { creds, commit -> verifyAndSave(c, creds, commit) },
-        onComplete = {
-          Thread({
-            Thread.sleep(1_500)
+    try {
+      val identity = MuseConfig.identity(c)
+      lateinit var controller: MuseSetupController
+      val transport = MuseBle(c, identity.bleName, onWrite = { controller.onWrite(it) }, onDisconnect = { controller.onDisconnect() },
+          onAdvertiseFailed = { code -> publish(status.copy(detail = "Bluetooth advertising failed ($code)")) })
+      transport.unsupportedReason()?.let {
+        publish(status.copy(detail = "Can't pair: $it"))
+        return it
+      }
+      val session = MusePairingSession(identity.nodeId, identity.deviceId, identity.mac, BuildConfigCompat.versionName, MuseConfig.sdkToken(c))
+      controller = MuseSetupController(
+          pairing = session,
+          identity = identity,
+          version = BuildConfigCompat.versionName,
+          transport = transport,
+          network = SetupNetwork(c),
+          provision = { creds, commit -> verifyAndSave(c, creds, commit) },
+          onComplete = {
+            Thread({
+              Thread.sleep(1_500)
+              closePairing()
+              reconnect()
+            }, "muse-pair-done").start()
+          })
+      val failure = transport.start()
+      if (failure != null) {
+        transport.stop() // restores the adapter name / radio state it may already have changed
+        publish(status.copy(detail = "Couldn't start pairing: $failure"))
+        return failure
+      }
+      controller.start()
+      val until = System.currentTimeMillis() + MuseConfig.PAIRING_WINDOW_MS
+      synchronized(pairingWindowLock) {
+        ble = transport
+        setup = controller
+        pairingCloser = Thread({
+          try {
+            Thread.sleep(MuseConfig.PAIRING_WINDOW_MS)
             closePairing()
-            reconnect()
-          }, "muse-pair-done").start()
-        })
-    if (!transport.start()) {
-      publish(status.copy(detail = "Couldn't start Bluetooth for pairing"))
-      return "couldn't start Bluetooth"
+          } catch (_: InterruptedException) {}
+        }, "muse-pair-window").apply { isDaemon = true; start() }
+      }
+      MuseConfig.setPairingWindowUntil(c, until)
+      publish(MuseStatus(MuseStatus.State.PAIRING, "In the Muse app: Settings › Devices › Add Device › ${identity.bleName}", status.vmName, until))
+      Log.i(TAG, "pairing open as ${identity.bleName}")
+      return null
+    } finally {
+      pairingStarting = false
     }
-    controller.start()
-    ble = transport
-    setup = controller
-    val until = System.currentTimeMillis() + MuseConfig.PAIRING_WINDOW_MS
-    MuseConfig.setPairingWindowUntil(c, until)
-    publish(MuseStatus(MuseStatus.State.PAIRING, "In the Muse app: Settings › Devices › Add Device › ${identity.bleName}", status.vmName, until))
-    pairingCloser = Thread({
-      try {
-        Thread.sleep(MuseConfig.PAIRING_WINDOW_MS)
-        closePairing()
-      } catch (_: InterruptedException) {}
-    }, "muse-pair-window").apply { isDaemon = true; start() }
-    Log.i(TAG, "pairing open as ${identity.bleName}")
-    return null
   }
 
-  @Synchronized
   fun closePairing() {
-    val b = ble ?: return
-    ble = null
-    setup?.stop()
-    setup = null
-    pairingCloser?.interrupt()
-    pairingCloser = null
+    val b: MuseBle
+    synchronized(pairingWindowLock) {
+      b = ble ?: return
+      ble = null
+      setup?.stop()
+      setup = null
+      pairingCloser?.interrupt()
+      pairingCloser = null
+    }
     runCatching { b.stop() }
     app?.let { MuseConfig.setPairingWindowUntil(it, 0) }
     Log.i(TAG, "pairing closed")
@@ -374,10 +417,18 @@ object MuseRuntime {
     publish(
         when {
           c == null -> status.copy(pairingUntil = 0)
+          !running -> MuseStatus(MuseStatus.State.DISABLED)
           link?.isRegistered == true -> status.copy(state = MuseStatus.State.CONNECTED, detail = "Connected", pairingUntil = 0)
           MuseConfig.isPaired(c) -> status.copy(state = MuseStatus.State.CONNECTING, detail = "Connecting", pairingUntil = 0)
           else -> MuseStatus(MuseStatus.State.UNPAIRED, "Pair it from the Muse app")
         })
+  }
+
+  /** Forgets the pairing (fleet `unpair`), serialized against token rotation. */
+  fun unpair(context: Context) {
+    closePairing()
+    synchronized(pairingLock) { MuseConfig.clearPairing(context) }
+    reconnect()
   }
 
   private fun verifyAndSave(c: Context, creds: MuseSetupController.Credentials, commit: (() -> Boolean) -> Boolean) {
@@ -388,7 +439,7 @@ object MuseRuntime {
       throw MuseSetupController.ProvisionFailed("auth_failed")
     }
     val record = MusePairingRecord(creds.accessToken, creds.refreshToken, creds.username, apiV2, creds.noiseHost, System.currentTimeMillis() / 1000)
-    if (!commit { MuseConfig.savePairing(c, record) }) throw MuseSetupController.ProvisionFailed("error_storage")
+    if (!commit { synchronized(pairingLock) { MuseConfig.savePairing(c, record) } }) throw MuseSetupController.ProvisionFailed("error_storage")
   }
 
   private class SetupNetwork(private val c: Context) : MuseSetupController.Network {
