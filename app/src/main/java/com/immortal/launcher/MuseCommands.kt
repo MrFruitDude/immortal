@@ -176,6 +176,38 @@ class MuseCommands(private val context: Context) {
       c.put("media.control", spec("Control what's playing on this Portal (any app with a media session).",
           required = mapOf("action" to p("string", "play_pause, next or previous."))))
     }
+    if (MuseMusic.configured(context)) {
+      c.put("music.players", spec(
+          "List the Music Assistant players: every Google Home / Nest speaker and speaker group, the Portals " +
+              "(Snapcast) and sync groups — with what each is playing and its volume.", timeoutMs = 20_000))
+      c.put("music.search", spec(
+          "Search Music Assistant (Spotify and the rest of the library) for tracks, albums, artists, " +
+              "playlists or radio. Returns items with a `uri` to play.",
+          required = mapOf("query" to p("string", "What to look for.")),
+          optional = mapOf(
+              "types" to p("array", "Any of track, album, artist, playlist, radio. Default: all."),
+              "limit" to p("integer", "Per type, default 5.")),
+          timeoutMs = 30_000))
+      c.put("music.play", spec(
+          "Play music on any room through Music Assistant: a `uri` from music.search, or the best match for " +
+              "`query` (a song, album, artist, playlist like 'Discover Weekly', or a genre). Plays on " +
+              "`player` (name or id from music.players: a Google Home, a speaker group, a Portal or a sync " +
+              "group, all in sync).",
+          required = mapOf("player" to p("string", "Player or group name/id.")),
+          optional = mapOf(
+              "uri" to p("string", "Media URI from music.search."),
+              "query" to p("string", "Or what to search and play."),
+              "type" to p("string", "Prefer this type for query: track, album, artist, playlist, radio."),
+              "enqueue" to p("string", "play (default), replace, next or add."),
+              "radio" to p("boolean", "Keep similar music playing afterwards.")),
+          timeoutMs = 45_000))
+      c.put("music.control", spec(
+          "Control a Music Assistant player: play, pause, play_pause, stop, next, previous, and/or volume 0-100.",
+          required = mapOf("player" to p("string", "Player or group name/id.")),
+          optional = mapOf("action" to p("string", "play, pause, play_pause, stop, next, previous."),
+              "volume" to p("integer", "0-100.")),
+          timeoutMs = 20_000))
+    }
     c.put("music.radio", spec(
         "Find an internet radio station by name or genre (e.g. 'BBC Radio 4', 'jazz', 'lofi', 'classical') and " +
             "play it — on this Portal, or on a Google Cast speaker or speaker group if `host` is given. " +
@@ -305,6 +337,12 @@ class MuseCommands(private val context: Context) {
             ok(JSONObject())
           }
           "music.radio" -> radio(params)
+          "music.players" -> ok(MuseMusic.players(context))
+          "music.search" -> ok(MuseMusic.search(context, params.getString("query"),
+              params.optJSONArray("types")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
+              params.optInt("limit", 5).coerceIn(1, 20)))
+          "music.play" -> ok(MuseMusic.play(context, params))
+          "music.control" -> ok(MuseMusic.control(context, params))
           "ha.states" -> smartHome {
             ok(MuseHomeAssistant.states(context, params.optString("domain").ifEmpty { null },
                 params.optString("search").ifEmpty { null }, params.optInt("limit", 60).coerceIn(1, 300)))

@@ -270,3 +270,136 @@ object MuseApps {
     return JSONObject().put("opened", url)
   }
 }
+
+/**
+ * Music Assistant: Spotify and the rest of your library, played on any room — Google Homes and
+ * speaker groups, the Portals (Snapcast) or sync groups of them. Uses the same server settings as
+ * Immortal's multi-room audio (address, API port, optional login).
+ */
+object MuseMusic {
+  private const val DEVICE = "Immortal Alfred"
+
+  fun configured(c: Context) = ImmortalSettings.snapcastHost(c).isNotBlank()
+
+  /** Every player Music Assistant knows: speakers, groups, Portals. */
+  fun players(c: Context): JSONObject {
+    val arr = call(c, "players/all", null).optJSONArray("result") ?: JSONArray()
+    val out = JSONArray()
+    for (i in 0 until arr.length()) {
+      val p = arr.getJSONObject(i)
+      if (!p.optBoolean("available", true) || p.optBoolean("hidden", false)) continue
+      val cm = p.optJSONObject("current_media")
+      out.put(JSONObject()
+          .put("id", p.optString("player_id"))
+          .put("name", p.optString("display_name").ifEmpty { p.optString("name") })
+          .put("type", p.optString("type"))
+          .put("provider", p.optString("provider"))
+          .put("state", p.optString("state"))
+          .put("volume", p.opt("volume_level"))
+          .put("group_members", p.optJSONArray("group_childs") ?: JSONArray())
+          .put("now_playing", cm?.let { JSONObject().put("title", it.optString("title")).put("artist", it.optString("artist")) } ?: JSONObject.NULL))
+    }
+    return JSONObject().put("players", out)
+  }
+
+  /** Search the library and Spotify; returns compact items with their `uri`. */
+  fun search(c: Context, query: String, types: List<String>, limit: Int): JSONObject {
+    val args = JSONObject().put("search_query", query).put("limit", limit)
+    if (types.isNotEmpty()) args.put("media_types", JSONArray(types))
+    val r = call(c, "music/search", args).optJSONObject("result") ?: JSONObject()
+    val out = JSONObject()
+    for (k in listOf("tracks", "albums", "artists", "playlists", "radio", "podcasts", "audiobooks")) {
+      val items = r.optJSONArray(k) ?: continue
+      out.put(k, JSONArray().also { a ->
+        for (i in 0 until minOf(items.length(), limit)) {
+          val it = items.getJSONObject(i)
+          val artists = it.optJSONArray("artists")?.let { ar -> (0 until ar.length()).joinToString { n -> ar.getJSONObject(n).optString("name") } }
+          a.put(JSONObject().put("name", it.optString("name")).put("uri", it.optString("uri"))
+              .put("artist", artists ?: it.optString("owner")).put("provider", it.optString("provider")))
+        }
+      })
+    }
+    return out
+  }
+
+  /**
+   * Plays [uri] — or the best match for [query] — on [player] (name or id). `enqueue`: play
+   * (default), replace, next or add. `radio` keeps similar music going after it.
+   */
+  fun play(c: Context, p: JSONObject): JSONObject {
+    val player = resolvePlayer(c, p.getString("player"))
+    val uri = p.optString("uri").ifEmpty {
+      val query = p.optString("query").ifEmpty { throw IllegalArgumentException("give a uri or a query") }
+      val type = p.optString("type").ifEmpty { null }
+      val found = search(c, query, listOfNotNull(type), 5)
+      val order = if (type != null) listOf(type + "s", type) else listOf("playlists", "albums", "tracks", "artists", "radio")
+      order.firstNotNullOfOrNull { k -> found.optJSONArray(k)?.optJSONObject(0)?.optString("uri")?.takeIf { it.isNotEmpty() } }
+          ?: throw IllegalStateException("nothing found for '$query'")
+    }
+    val args = JSONObject().put("queue_id", player.first).put("media", uri).put("option", p.optString("enqueue", "play"))
+    if (p.optBoolean("radio", false)) args.put("radio_mode", true)
+    call(c, "player_queues/play_media", args)
+    return JSONObject().put("playing", uri).put("on", player.second)
+  }
+
+  /** play / pause / stop / next / previous, and/or volume 0–100, on a player. */
+  fun control(c: Context, p: JSONObject): JSONObject {
+    val (id, name) = resolvePlayer(c, p.getString("player"))
+    p.optString("action").takeIf { it.isNotEmpty() }?.let { a ->
+      val cmd = when (a) {
+        "play", "pause", "stop", "next", "previous" -> a
+        "play_pause", "toggle" -> "play_pause"
+        else -> throw IllegalArgumentException("action must be play, pause, play_pause, stop, next or previous")
+      }
+      call(c, "players/cmd/$cmd", JSONObject().put("player_id", id))
+    }
+    if (p.has("volume")) call(c, "players/cmd/volume_set", JSONObject().put("player_id", id).put("volume_level", p.getInt("volume").coerceIn(0, 100)))
+    return JSONObject().put("player", name)
+  }
+
+  /** (player_id, display name) for a name or id; fuzzy on names. */
+  private fun resolvePlayer(c: Context, key: String): Pair<String, String> {
+    val arr = players(c).getJSONArray("players")
+    val all = (0 until arr.length()).map { arr.getJSONObject(it) }
+    val hit = all.firstOrNull { it.optString("id") == key }
+        ?: all.firstOrNull { it.optString("name").equals(key, true) }
+        ?: all.firstOrNull { it.optString("name").contains(key, true) }
+        ?: throw IllegalArgumentException("no Music Assistant player called '$key' (try music.players)")
+    return hit.getString("id") to hit.getString("name")
+  }
+
+  /** One request on a fresh socket (auth first when a login is configured); returns the reply. */
+  internal fun call(c: Context, command: String, args: JSONObject?): JSONObject {
+    val ws = MaWebSocket(ImmortalSettings.snapcastHost(c), ImmortalSettings.maPort(c))
+    if (!ws.connect(8000)) throw IllegalStateException("can't reach Music Assistant at ${ImmortalSettings.snapcastHost(c)}")
+    try {
+      ws.readText() // server hello
+      val user = ImmortalSettings.maUser(c)
+      val pass = ImmortalSettings.maPass(c)
+      if (user.isNotBlank() && pass.isNotBlank()) {
+        val login = request(ws, "auth/login", JSONObject().put("username", user).put("password", pass).put("device_name", DEVICE))
+        val tok = login.optJSONObject("result")?.let { it.optString("access_token").ifEmpty { it.optString("token") } }
+        if (tok.isNullOrEmpty()) throw IllegalStateException("Music Assistant login failed")
+        request(ws, "auth", JSONObject().put("token", tok).put("device_name", DEVICE))
+      }
+      return request(ws, command, args)
+    } finally {
+      ws.close()
+    }
+  }
+
+  private fun request(ws: MaWebSocket, command: String, args: JSONObject?): JSONObject {
+    val id = java.util.UUID.randomUUID().toString()
+    val o = JSONObject().put("command", command).put("message_id", id)
+    if (args != null) o.put("args", args)
+    ws.sendText(o.toString())
+    repeat(200) {
+      val t = ws.readText() ?: throw IllegalStateException("Music Assistant closed the connection")
+      val m = runCatching { JSONObject(t) }.getOrNull() ?: return@repeat
+      if (m.optString("message_id") != id) return@repeat
+      if (m.has("error_code")) throw IllegalStateException("Music Assistant: ${m.optString("details").ifEmpty { m.optString("error_code") }}")
+      return m
+    }
+    throw IllegalStateException("no answer from Music Assistant to $command")
+  }
+}
