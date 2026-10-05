@@ -1,6 +1,6 @@
 {
-  "versionCode": 69,
-  "versionName": "1.75",
+  "versionCode": 70,
+  "versionName": "1.76",
   "apkUrl": "https://github.com/MrFruitDude/immortal/releases/latest/download/immortal.apk",
-  "notes": "Alfred: Muse on your Portal. Pair it with the Muse app as a gadget, talk with push-to-talk or an on-device \"Hey Alfred\" wake word (nothing leaves the Portal until it hears it), and let Muse use the screen as its canvas, play radio, and control Google Home speakers, Hue and Home Assistant. This build updates from the MrFruitDude/immortal fork."
+  "notes": "Alfred: the wake word and push-to-talk recover when the microphone stalls instead of getting stuck listening, and a note Muse refuses ends the turn right away."
 }
