@@ -1684,6 +1684,10 @@ class PhotoFrameController(
     // Keep UI components above photo layers
     if (this::videoView.isInitialized) videoView.bringToFront()
     faceRenderer.view.bringToFront()
+    // The calendar panel is a sibling of the photo layers, so the incoming
+    // layer's bringToFront() above would otherwise bury it for the rest of the
+    // slide — visible only while the new photo is still fading in.
+    if (this::calendarPanel.isInitialized) calendarPanel.bringToFront()
     dashboardPanel?.bringToFront()
     welcomeOverlay?.bringToFront()
 
