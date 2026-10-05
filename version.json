@@ -1,6 +1,6 @@
 {
-  "versionCode": 72,
-  "versionName": "1.78",
+  "versionCode": 73,
+  "versionName": "1.79",
   "apkUrl": "https://github.com/MrFruitDude/immortal/releases/latest/download/immortal.apk",
-  "notes": "Immortal now installs its own updates automatically while the Portal isn't in use (Settings > Install updates automatically), and fleetctl update --self updates a Portal on demand."
+  "notes": "Installs no longer fail while the screensaver is showing: the screen is woken so the installer dialog can be confirmed (fixes unattended self-updates and fleet installs on idle Portals). Catalog: Music Assistant app."
 }
