@@ -648,6 +648,8 @@ function Enable-Fleet {
   # in its shell-writable external dir, (re)launch it, read agent.json back for the
   # token. The agent is the persistent WiFi channel; we never switch the device to
   # raw adb-over-WiFi here (that restarts adbd, killing the shell helpers).
+  # Gates the default provision run (fleet is opt-in via config.env); the -Fleet
+  # switch sets this to "true" before calling, so the flag always wins.
   if ($cfg["ENABLE_FLEET"] -ne "true") { return }
   Step "Enabling the WiFi fleet agent"
   $pkg = $cfg["PKG"]
@@ -724,6 +726,8 @@ function Enable-WifiAdbNow {
 # ----- modes -----------------------------------------------------------------
 if ($Fleet) {
   Wait-Device
+  # Explicit flag wins over the opt-in default in config.env.
+  $cfg["ENABLE_FLEET"] = "true"
   Enable-Fleet
   exit 0
 }
