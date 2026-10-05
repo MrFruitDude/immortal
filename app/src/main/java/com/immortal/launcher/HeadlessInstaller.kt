@@ -19,6 +19,7 @@ import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Installs an APK via [PackageInstaller] with NO foreground UI of our own: when the
@@ -46,9 +47,12 @@ object HeadlessInstaller {
     val app = context.applicationContext
     val latch = CountDownLatch(1)
     val ok = AtomicBoolean(false)
+    // Every install's result arrives on the same action; only act on our own session's.
+    val sessionId = AtomicInteger(-1)
     val receiver =
         object : BroadcastReceiver() {
           override fun onReceive(c: Context, intent: Intent) {
+            if (intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -2) != sessionId.get()) return
             when (intent.getIntExtra(PackageInstaller.EXTRA_STATUS, Int.MIN_VALUE)) {
               PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                 val confirm =
@@ -81,8 +85,9 @@ object HeadlessInstaller {
     return try {
       val pi = app.packageManager.packageInstaller
       val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
-      val sessionId = pi.createSession(params)
-      pi.openSession(sessionId).use { session ->
+      val id = pi.createSession(params)
+      sessionId.set(id)
+      pi.openSession(id).use { session ->
         session.openWrite("base.apk", 0, apk.length()).use { out ->
           apk.inputStream().use { it.copyTo(out) }
           session.fsync(out)
@@ -93,10 +98,14 @@ object HeadlessInstaller {
             else PendingIntent.FLAG_UPDATE_CURRENT
         val pending =
             PendingIntent.getBroadcast(
-                app, sessionId, Intent(ACTION).setPackage(app.packageName), flags)
+                app, id, Intent(ACTION).setPackage(app.packageName), flags)
         session.commit(pending.intentSender)
       }
-      latch.await(timeoutMs, TimeUnit.MILLISECONDS)
+      if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+        // Don't leave the dialog pending: a late confirm would install after we've reported failure.
+        Log.w(TAG, "install of $pkg timed out; abandoning session $id")
+        runCatching { pi.abandonSession(id) }
+      }
       ok.get()
     } catch (t: Throwable) {
       Log.w(TAG, "headless install of $pkg failed", t)
