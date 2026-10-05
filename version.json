@@ -1,6 +1,6 @@
 {
-  "versionCode": 73,
-  "versionName": "1.79",
+  "versionCode": 74,
+  "versionName": "1.80",
   "apkUrl": "https://github.com/MrFruitDude/immortal/releases/latest/download/immortal.apk",
-  "notes": "Installs no longer fail while the screensaver is showing: the screen is woken so the installer dialog can be confirmed (fixes unattended self-updates and fleet installs on idle Portals). Catalog: Music Assistant app."
+  "notes": "Installs report the right result: a late confirm from an earlier install no longer counts as the current one, and timed-out installs are cancelled."
 }
