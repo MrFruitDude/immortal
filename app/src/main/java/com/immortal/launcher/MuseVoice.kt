@@ -144,6 +144,9 @@ class MuseVoiceTurn(
   @SuppressLint("MissingPermission") // RECORD_AUDIO is granted at install on API 28/29 Portals
   fun begin(): Boolean {
     if (!MicOwner.acquire(MIC_OWNER, MicOwner.PRIORITY_NOTE)) return fail("the microphone is busy (${MicOwner.holder})")
+    // The wake listener yields within one 100 ms chunk once it sees it lost the mic; give it
+    // that long, so two captures never open the same input at once.
+    AlfredWake.awaitMicReleased(600)
     val minBuf = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
     val rec = runCatching {
       AudioRecord(MediaRecorder.AudioSource.MIC, RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuf, RATE))
@@ -174,6 +177,12 @@ class MuseVoiceTurn(
   /** Adds captured PCM to the note; false if the upload can't keep up (the turn has failed). */
   fun feed(pcm: ByteArray, off: Int, len: Int): Boolean {
     if (!recording.get() || cancelled.get()) return false
+    // Muse already refused the note (e.g. HTTP 502): stop recording and say so now.
+    failure?.let {
+      recording.set(false)
+      finish(it)
+      return false
+    }
     val n = minOf(len, MAX_NOTE_BYTES - pcmBytes)
     if (n <= 0) return true
     stage.write(pcm, off, n)
@@ -222,9 +231,15 @@ class MuseVoiceTurn(
     val buf = ByteArray(RATE / 10 * 2) // 100 ms
     try {
       rec.startRecording()
+      var dead = 0
       while (recording.get() && pcmBytes < MAX_NOTE_BYTES) {
         val n = rec.read(buf, 0, buf.size)
-        if (n <= 0) continue
+        if (n <= 0) {
+          if (++dead >= 20) break // the mic stopped delivering: send what we have
+          Thread.sleep(50)
+          continue
+        }
+        dead = 0
         if (!feed(buf, 0, n)) return
       }
     } finally {
@@ -355,7 +370,7 @@ class MuseVoiceTurn(
       val obj = runCatching { JSONObject(line) }.getOrNull() ?: continue
       // Event names and ids only — never message text.
       val pl = obj.optJSONObject("payload")
-      Log.i(TAG, "sub: type=${obj.optString("type")} event=${obj.optString("event")} seq=${obj.opt("seq")} " +
+      Log.d(TAG, "sub: type=${obj.optString("type")} event=${obj.optString("event")} seq=${obj.opt("seq")} " +
           "msg=${pl?.optString("message_id")?.ifEmpty { pl.optString("id") }} reply_to=${pl?.optString("reply_to_message_id")}" +
           " parent=${pl?.optString("parent_message_id")} keys=${pl?.keys()?.asSequence()?.toList()}")
       synchronized(lock) {

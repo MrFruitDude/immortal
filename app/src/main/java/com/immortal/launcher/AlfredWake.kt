@@ -61,6 +61,14 @@ object AlfredWake {
   @Volatile var detail = ""
     private set
   @Volatile private var thread: Thread? = null
+  /** True while the wake listener has an AudioRecord open. */
+  @Volatile private var micOpen = false
+
+  /** Blocks up to [ms] until the wake listener has closed its microphone. */
+  fun awaitMicReleased(ms: Long) {
+    val until = System.currentTimeMillis() + ms
+    while (micOpen && System.currentTimeMillis() < until) Thread.sleep(20)
+  }
   @Volatile private var running = false
   private var model: Model? = null
 
@@ -155,6 +163,7 @@ object AlfredWake {
     var quiet = 0
     try {
       rec.startRecording()
+      micOpen = true
       set(Status.LISTENING, "Listening for “Hey ${Alfred.NAME}” on this Portal")
       Log.i(TAG, "listening for the wake word (on-device)")
       while (running) {
@@ -198,13 +207,14 @@ object AlfredWake {
     } finally {
       runCatching { rec.stop() }
       rec.release()
+      micOpen = false
       recognizer.close()
       MicOwner.release(OWNER)
     }
   }
 
   private fun onWake(c: Context, rec: AudioRecord, ring: ArrayDeque<ByteArray>, floor: Double, recognizer: Recognizer) {
-    Log.i(TAG, "wake word heard")
+    Log.w(TAG, "wake word heard") // warn level: survives logcat rate-limiting
     recognizer.reset()
     capture(c, rec, ring, maxOf(floor, 150.0))
     ring.clear()
@@ -232,12 +242,20 @@ object AlfredWake {
     val started = System.currentTimeMillis()
     var lastSpeech = 0L
     val threshold = maxOf(floor * 2.8, 450.0)
+    var dead = 0
     try {
       while (running) {
         val n = readFully(rec, buf)
-        if (n <= 0) continue
-        if (!turn.feed(buf, 0, n)) return // the turn failed (Muse unreachable): it reported why
         val now = System.currentTimeMillis()
+        if (n <= 0) {
+          // The microphone stopped delivering (another app took it, or the HAL died). Send what
+          // we have rather than wait forever; listen() reopens the mic afterwards.
+          if (++dead >= 20 || now - started > MAX_COMMAND_MS) break
+          Thread.sleep(50)
+          continue
+        }
+        dead = 0
+        if (!turn.feed(buf, 0, n)) return // the turn failed (Muse unreachable): it reported why
         if (rms(buf, n) > threshold) lastSpeech = now
         val done =
             (lastSpeech > 0 && now - lastSpeech > END_SILENCE_MS) ||
