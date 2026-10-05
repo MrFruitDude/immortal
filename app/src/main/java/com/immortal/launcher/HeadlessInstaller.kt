@@ -31,6 +31,12 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Immortal holding `SYSTEM_ALERT_WINDOW` (the background-activity-start exemption);
  * without it the dialog won't appear and the install times out — which the agent
  * surfaces as a failure rather than a silent hang.
+ *
+ * The dialog is a normal activity, so it opens *behind* the photo-frame dream (and on
+ * a blank screen nothing is clickable at all). We wake the screen first, which ends the
+ * dream (held off from relaunching the frame on top); otherwise installs started while
+ * the Portal is idle -- the fleet's and the self-updater's -- time out with the dialog
+ * hidden.
  */
 object HeadlessInstaller {
   private const val TAG = "ImmortalFleet"
@@ -50,6 +56,10 @@ object HeadlessInstaller {
                         intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
                     else @Suppress("DEPRECATION") intent.getParcelableExtra(Intent.EXTRA_INTENT)
                 confirm?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (PresenceHub.current.screen != ScreenState.INTERACTIVE) {
+                  DreamPolicy.holdForSystemDialog()
+                  ScreenControl.wake(app)
+                }
                 // Surface the system dialog; InstallConfirmService taps "Install".
                 runCatching { app.startActivity(confirm) }
                     .onFailure { Log.w(TAG, "couldn't launch installer dialog for $pkg", it) }

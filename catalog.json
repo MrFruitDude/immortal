@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "updated": "2026-10-04",
+  "updated": "2026-10-05",
   "note": "Portal app catalog, schema v2. All v2 fields are ADDITIVE so v1 clients keep working. Entries with source 'fdroid' resolve the current APK at install time via the F-Droid API, so they never go stale. Entries with source 'url' use a direct apkUrl (use this for your own custom Portal apps); give them a 'versionCode' (bumped per release) OR a 'versionUrl' — a JSON manifest (e.g. the app's own version.json) with a 'versionCode' field that the store reads live, so a 'releases/latest/download' app stays current with no catalog edit per release. Multi-ABI apps (e.g. VLC) ship separate per-architecture APKs on F-Droid; pin the arm64-v8a build with 'versionCode' since Portal is arm64. New in v2: iconUrl (https PNG; omit to get a monogram tile), author, homepage, submittedBy (community credit), longDescription (detail page), devices (['touch','tv'] — omit when the app runs on every Portal). minSdk drives the compatibility badge: the first-gen Portal/Portal+ and Portal TV are API 28, the 2019/2021 models are API 29.",
   "categories": [
     {
@@ -103,6 +103,18 @@
           "iconUrl": "https://f-droid.org/repo/io.github.jqssun.airplay/en-US/icon.png",
           "author": "jqssun",
           "homepage": "https://github.com/jqssun/android-airplay-server"
+        },
+        {
+          "name": "Music Assistant",
+          "packageName": "io.music_assistant.client",
+          "source": "url",
+          "apkUrl": "https://github.com/music-assistant/mobile-app/releases/download/android-v0.14.0/music-assistant-0.14.0.apk",
+          "minSdk": 28,
+          "description": "Your Music Assistant server on the Portal, and a Sendspin speaker for multi-room audio.",
+          "longDescription": "The official Music Assistant app. Browse and control your whole library (Spotify, radio, local files) from the Portal, and turn the Portal into a Music Assistant player: its built-in Sendspin speaker joins your server's players next to Google Cast and AirPlay speakers, so you can group it with the rest of the house. Needs a Music Assistant server on your network (2.7 or newer for Sendspin). The download is pinned to a release because the project's APK names change with each version.",
+          "iconUrl": "https://raw.githubusercontent.com/music-assistant/frontend/main/public/apple-touch-icon.png",
+          "author": "Music Assistant",
+          "homepage": "https://github.com/music-assistant/mobile-app"
         }
       ]
     },

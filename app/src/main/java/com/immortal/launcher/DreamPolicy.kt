@@ -99,6 +99,15 @@ object DreamPolicy {
         .commit()
   }
 
+  /**
+   * About to wake the screen for a system dialog (the package installer): treat the dream stop
+   * that follows like a bridge, so the frame isn't relaunched over the dialog. In-memory only;
+   * it lapses after [BRIDGE_GRACE_MS].
+   */
+  fun holdForSystemDialog() {
+    bridgeAt = System.currentTimeMillis()
+  }
+
   /** Called by [HomeActivity.onResume] when the user returns — clears persisted bridge. */
   fun clearBridge(context: Context) {
     inStockHandoff = false
