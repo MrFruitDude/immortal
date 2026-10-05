@@ -1,6 +1,6 @@
 {
-  "versionCode": 70,
-  "versionName": "1.76",
+  "versionCode": 71,
+  "versionName": "1.77",
   "apkUrl": "https://github.com/MrFruitDude/immortal/releases/latest/download/immortal.apk",
-  "notes": "Alfred: the wake word and push-to-talk recover when the microphone stalls instead of getting stuck listening, and a note Muse refuses ends the turn right away."
+  "notes": "Alfred can play music through Music Assistant (Spotify and your library on any speaker, group or Portal). The app list and store keep retrying the online catalog if Wi-Fi isn't up yet at start."
 }

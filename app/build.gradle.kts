@@ -34,8 +34,8 @@ android {
     applicationId = "com.immortal.launcher"
     minSdk = 24
     targetSdk = 36
-    versionCode = 70
-    versionName = "1.76"
+    versionCode = 71
+    versionName = "1.77"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
