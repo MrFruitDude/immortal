@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Debug builds install alongside a provisioned release (.debug suffix); tell them apart. -->
+    <string name="app_name">Immortal (test)</string>
+</resources>
