@@ -11,7 +11,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-repo="${RELEASE_REPO:-starbrightlab/immortal}"
+repo="$(scripts/home-repo.sh)"
 stable_apk_url="https://github.com/$repo/releases/latest/download/immortal.apk"
 
 g_code="$(sed -n 's/.*versionCode = \([0-9]*\).*/\1/p' app/build.gradle.kts | head -1)"

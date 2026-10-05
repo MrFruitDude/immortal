@@ -50,10 +50,10 @@ const val STORE_EXTRA_PKG = "pkg"
  * (see the provisioning kit).
  */
 object StoreCatalog {
-  // Point this at your hosted catalog (e.g. a GitHub raw URL). Falls back to the
-  // bundled assets/catalog.json if the network copy can't be reached.
-  private const val CATALOG_URL =
-      "https://raw.githubusercontent.com/starbrightlab/immortal/main/catalog.json"
+  // The home repo's catalog (gradle.properties: immortal.homeRepo). Falls back to the bundled
+  // assets/catalog.json if the network copy can't be reached.
+  private val CATALOG_URL =
+      "https://raw.githubusercontent.com/${BuildConfig.HOME_REPO}/main/catalog.json"
 
   private val io = Executors.newSingleThreadExecutor()
   // Lazy so touching the pure helpers (parse/resolveApkUrl) in a unit test doesn't

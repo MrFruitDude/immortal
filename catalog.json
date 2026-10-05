@@ -260,7 +260,7 @@
           "name": "Immortal",
           "packageName": "com.immortal.launcher",
           "source": "url",
-          "apkUrl": "https://github.com/starbrightlab/immortal/releases/latest/download/immortal.apk",
+          "apkUrl": "https://github.com/MrFruitDude/immortal/releases/latest/download/immortal.apk",
           "minSdk": 24,
           "description": "The Immortal launcher, screensaver, and app store — the project itself.",
           "longDescription": "The launcher you're using right now: home screen, photo-frame screensaver with local media support, this app store, and self-update. Community app submissions welcome — see the project page.",

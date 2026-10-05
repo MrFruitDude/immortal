@@ -36,11 +36,11 @@ const val UPDATE_INSTALL_ACTION = "com.immortal.launcher.UPDATE_INSTALL_STATUS"
  * same signing key).
  */
 object UpdateManager {
-  // Point this at your hosted manifest (e.g. a GitHub raw URL). Overridable so
-  // the same field can target a test server on the LAN.
+  // The home repo's manifest (gradle.properties: immortal.homeRepo — a fork points its Portals
+  // at itself). Overridable so the same field can target a test server on the LAN.
   @Volatile
   var updateUrl: String =
-      "https://raw.githubusercontent.com/starbrightlab/immortal/main/version.json"
+      "https://raw.githubusercontent.com/${BuildConfig.HOME_REPO}/main/version.json"
 
   private val io = Executors.newSingleThreadExecutor()
   // Lazy so touching the pure helpers (parseManifest/shouldUpdate/cacheBust) in a

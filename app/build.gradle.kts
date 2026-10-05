@@ -21,6 +21,8 @@ plugins {
 val keystorePropsFile =
     rootProject.file("keystore.properties").takeIf { it.exists() }
         ?: File(System.getProperty("user.home"), ".immortal-signing/keystore.properties")
+val homeRepo = providers.gradleProperty("immortal.homeRepo").getOrElse("starbrightlab/immortal")
+
 val keystoreProps =
     Properties().apply { if (keystorePropsFile.exists()) keystorePropsFile.inputStream().use(::load) }
 
@@ -36,6 +38,9 @@ android {
     versionName = "1.74"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+    // Where self-update and the app store look (gradle.properties: immortal.homeRepo).
+    buildConfigField("String", "HOME_REPO", "\"$homeRepo\"")
 
     // Portal hardware is ARM only (gen-1/gen-2 Snapdragon, Portal TV Amlogic).
     // Kept as a guard so any future native dependency can't drag x86/x86_64 .so
@@ -95,7 +100,10 @@ android {
     sourceCompatibility = JavaVersion.VERSION_11
     targetCompatibility = JavaVersion.VERSION_11
   }
-  buildFeatures { compose = true }
+  buildFeatures {
+    compose = true
+    buildConfig = true
+  }
   testOptions {
     // Let unit tests exercise code that logs: the android.jar stub used off-device throws
     // "not mocked" for android.util.Log, which would otherwise put every logging path
@@ -124,6 +132,12 @@ dependencies {
   // QR encoder for the "Set up from your phone" screen (scan the LAN address). Core only — we
   // render the BitMatrix to a Bitmap ourselves, no Android-specific zxing module needed.
   implementation("com.google.zxing:core:3.5.3")
+
+  // "Hey Alfred": on-device keyword spotting (Kaldi via Vosk, Apache-2.0). The acoustic model
+  // (~41 MB) is downloaded on first use and checksum-pinned (AlfredWake); audio never leaves the
+  // device until the wake word is heard.
+  implementation("com.alphacephei:vosk-android:0.3.47@aar")
+  implementation("net.java.dev.jna:jna:5.13.0@aar")
 
   // Media3 Transformer: on-device, hardware-accelerated video downscale/transcode for the
   // screensaver media cache ([VideoTranscoder]) — turns near-original remote clips into

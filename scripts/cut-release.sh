@@ -31,7 +31,18 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-repo="${RELEASE_REPO:-starbrightlab/immortal}"
+repo="$(scripts/home-repo.sh)"
+# The git remote that points at $repo (a fork's checkout usually has the official repo as
+# origin/upstream and the fork as another remote). Override with RELEASE_REMOTE.
+remote="${RELEASE_REMOTE:-}"
+if [ -z "$remote" ]; then
+  for r in $(git remote); do
+    case "$(git remote get-url "$r")" in
+      *"github.com/$repo.git"|*"github.com/$repo"|*"github.com:$repo.git"|*"github.com:$repo") remote="$r"; break;;
+    esac
+  done
+fi
+[ -n "$remote" ] || { echo "✗ no git remote points at $repo — add one or set RELEASE_REMOTE" >&2; exit 1; }
 stable_apk_url="https://github.com/$repo/releases/latest/download/immortal.apk"
 stable_kit_url="https://github.com/$repo/releases/latest/download/portal-kit.zip"
 
@@ -62,13 +73,12 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 step "Preflight"
 command -v gh >/dev/null || die "gh CLI not found"
 gh auth status >/dev/null 2>&1 || die "gh is not authenticated (run: gh auth login)"
-[ "$(git rev-parse --abbrev-ref HEAD)" = "main" ] || die "not on main (on $(git rev-parse --abbrev-ref HEAD))"
 git diff --quiet && git diff --cached --quiet || die "working tree has uncommitted changes — commit or stash first"
-git fetch --quiet origin main --tags
-[ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || die "local main is not in sync with origin/main — pull/push first"
+git fetch --quiet "$remote" main --tags
+[ "$(git rev-parse HEAD)" = "$(git rev-parse "$remote/main")" ] || die "HEAD is not exactly $remote/main — check out (or fast-forward to) $remote/main first"
 git rev-parse "$tag" >/dev/null 2>&1 && die "tag $tag already exists locally"
-git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1 && die "tag $tag already exists on origin"
-echo "  ok: gh authed · clean main synced with origin · $tag is free · signing key + build-tools present"
+git ls-remote --exit-code --tags "$remote" "refs/tags/$tag" >/dev/null 2>&1 && die "tag $tag already exists on origin"
+echo "  ok: releasing to $repo via $remote · gh authed · clean main synced · $tag is free · signing key + build-tools present"
 
 # ---- compute versions ----
 cur_code="$(sed -n 's/.*versionCode = \([0-9]*\).*/\1/p' app/build.gradle.kts | head -1)"
@@ -129,8 +139,8 @@ step "Commit, tag, push"
 git add app/build.gradle.kts version.json
 git commit -q -m "Release $version_name (versionCode $new_code)"
 git tag -a "$tag" -m "Immortal $version_name"
-git push --quiet origin main
-git push --quiet origin "$tag"
+git push --quiet "$remote" HEAD:main
+git push --quiet "$remote" "$tag"
 echo "  committed bump + pushed $tag"
 
 step "Create draft release, upload assets, publish"
