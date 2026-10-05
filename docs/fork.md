@@ -34,8 +34,11 @@ from the official build to yours is therefore a reinstall:
 1. `provisioning/fleet-backup.sh "<name>"` saves every Immortal setting over Wi-Fi.
 2. On the Portal: **Settings › Security › Device admin apps › Immortal › Deactivate** (Android
    won't let this be done remotely).
-3. Over USB: `adb uninstall com.immortal.launcher`, then `./provision.sh --fleet`, which installs
-   your latest release and re-registers the Portal with `fleetctl`.
+3. Over USB: `adb uninstall com.immortal.launcher`, then `./provision.sh` (installs your latest
+   release and sets it as home and screensaver) and `./provision.sh --fleet` (re-registers the
+   Portal with `fleetctl`; this fork's `config.env` has `ENABLE_FLEET=true`). Values in
+   `config.env` override environment variables, so set a device name afterwards with
+   `fleetctl config --name "…"`.
 4. `provisioning/fleet-restore.sh "<name>"` brings the settings and apps back.
 
 From then on the Portal updates itself from your releases.
