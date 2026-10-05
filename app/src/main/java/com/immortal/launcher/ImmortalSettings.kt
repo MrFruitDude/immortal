@@ -65,6 +65,9 @@ object ImmortalSettings {
       // using the whole panel. Off by default — most users want the full screen; turning it
       // on restores the centred, constrained grid.
       val constrainPageWidth: Boolean = false,
+      // Install Immortal updates by itself (silently, while the Portal isn't in use) instead of
+      // waiting for a tap on the Updates tile. On by default: a fleet should follow its releases.
+      val autoUpdate: Boolean = true,
       // Multi-room audio: when this Portal is a Snapcast speaker, surface what the
       // group is playing on the now-playing card (read from the Music Assistant /
       // snapserver at [snapcastHost]). Off until configured.
@@ -93,6 +96,7 @@ object ImmortalSettings {
         portalPresence = p.getBoolean("portal_presence", true),
         hideStatusBar = p.getBoolean("hide_status_bar", true),
         constrainPageWidth = p.getBoolean("constrain_page_width", false),
+        autoUpdate = p.getBoolean("auto_update", true),
         multiRoomEnabled = p.getBoolean("multiroom_enabled", false),
         snapcastHost = p.getString("snapcast_host", "") ?: "",
         maPort = p.getInt("ma_port", DEFAULT_MA_PORT),
@@ -180,6 +184,10 @@ object ImmortalSettings {
 
   fun setShowMiniPlayer(c: Context, on: Boolean) =
       prefs(c).edit().putBoolean("show_mini_player", on).apply()
+
+  fun autoUpdate(c: Context): Boolean = prefs(c).getBoolean("auto_update", true)
+
+  fun setAutoUpdate(c: Context, on: Boolean) = prefs(c).edit().putBoolean("auto_update", on).apply()
 
   fun hideStatusBar(c: Context): Boolean = prefs(c).getBoolean("hide_status_bar", true)
 

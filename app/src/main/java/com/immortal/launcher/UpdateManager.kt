@@ -93,6 +93,69 @@ object UpdateManager {
   internal fun cacheBust(base: String, t: Long): String =
       base + (if (base.contains("?")) "&" else "?") + "t=" + t
 
+  // --- automatic updates ---------------------------------------------------------
+  private const val AUTO_CHECK_MS = 6L * 60 * 60 * 1000
+  private const val AUTO_FIRST_CHECK_MS = 3L * 60 * 1000
+  private const val AUTO_RETRY_IDLE_MS = 30L * 60 * 1000
+  /** Past this since an update was first seen, install even if the Portal is in use. */
+  private const val AUTO_MAX_DEFER_MS = 24L * 60 * 60 * 1000
+  @Volatile private var autoStarted = false
+  @Volatile private var firstSeenAt = 0L
+
+  /**
+   * Keeps this Portal on the home repo's latest release without anyone tapping the Updates tile:
+   * checks a few minutes after start and every 6 h, and installs through the same silent path as
+   * fleet installs — only while the Portal isn't being used (screen off or the screensaver up),
+   * unless an update has waited a day. Off in dev mode and when the setting is off.
+   */
+  fun startAuto(context: Context) {
+    if (autoStarted) return
+    autoStarted = true
+    val app = context.applicationContext
+    main.postDelayed({ autoTick(app) }, AUTO_FIRST_CHECK_MS)
+  }
+
+  private fun autoTick(c: Context) {
+    io.execute {
+      var next = AUTO_CHECK_MS
+      try {
+        if (!ImmortalSettings.autoUpdate(c) || DevMode.isEnabled(c)) return@execute
+        val info = runCatching { parseManifest(httpGet(cacheBust(resolveUrl(c), System.currentTimeMillis()))) }.getOrNull()
+        if (info == null || !shouldUpdate(info.versionCode, installedVersionCode(c))) {
+          firstSeenAt = 0
+          return@execute
+        }
+        if (firstSeenAt == 0L) firstSeenAt = System.currentTimeMillis()
+        val idle = PresenceHub.current.screen != ScreenState.INTERACTIVE
+        if (!idle && System.currentTimeMillis() - firstSeenAt < AUTO_MAX_DEFER_MS) {
+          android.util.Log.i("ImmortalUpdate", "update ${info.versionCode} waiting for the Portal to be idle")
+          next = AUTO_RETRY_IDLE_MS
+          return@execute
+        }
+        android.util.Log.i("ImmortalUpdate", "auto-installing update ${info.versionCode}")
+        installNow(c, info)
+      } finally {
+        main.postDelayed({ autoTick(c) }, next)
+      }
+    }
+  }
+
+  /** Downloads [info]'s APK and installs it silently (daemon or auto-confirmed dialog). Blocking. */
+  fun installNow(context: Context, info: UpdateInfo): Boolean {
+    if (InstallDaemon.installPaused(context)) return false
+    val apk = File(context.cacheDir, "immortal-update.apk")
+    download(info.apkUrl, apk)
+    return if (InstallDaemon.isAvailable(context)) InstallDaemon.install(context, apk, "immortal-update")
+    else HeadlessInstaller.install(context, apk, context.packageName)
+  }
+
+  /** For the fleet: check now and install if newer. Returns (installedOrNull, remoteVersionCode). */
+  fun updateSelfNow(context: Context): Pair<Boolean?, Long> {
+    val info = parseManifest(httpGet(cacheBust(resolveUrl(context), System.currentTimeMillis())))
+    if (!shouldUpdate(info.versionCode, installedVersionCode(context))) return null to info.versionCode
+    return installNow(context, info) to info.versionCode
+  }
+
   /** Downloads and commits the update; status text is posted on the main thread. */
   fun installUpdate(context: Context, info: UpdateInfo, status: (String) -> Unit) {
     if (InstallDaemon.installPaused(context)) {

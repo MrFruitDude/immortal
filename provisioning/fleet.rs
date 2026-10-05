@@ -648,7 +648,7 @@ impl Args {
 }
 
 // Flags that don't take a value.
-const VALUELESS: &[&str] = &["all", "check", "help", "no-pause"];
+const VALUELESS: &[&str] = &["all", "check", "help", "no-pause", "self"];
 
 fn parse_args(argv: &[String]) -> Args {
     let mut cmd = String::new();
@@ -764,14 +764,17 @@ fn cmd_install(args: &Args) -> i32 {
 }
 
 fn cmd_update(args: &Args) -> i32 {
-    let body = if args.has("check") {
+    let body = if args.has("self") {
+        // Immortal itself: check the home repo now and install if newer.
+        build_obj(&[("self", Field::B(true))])
+    } else if args.has("check") {
         build_obj(&[("dryRun", Field::B(true))])
     } else if args.has("all") {
         build_obj(&[("all", Field::B(true))])
     } else if let Some(pkg) = args.pos(0) {
         build_obj(&[("packageName", Field::S(pkg.clone()))])
     } else {
-        die("update: pass --all, --check, or a package name");
+        die("update: pass --all, --check, --self, or a package name");
     };
     post_json(args, "/update", body)
 }
@@ -1122,6 +1125,7 @@ COMMANDS:
   diag                          diagnostics snapshot
   install <pkg> [--apk-url URL] install a catalog package (or a direct APK URL)
   update [<pkg>|--all|--check]  update apps (or dry-run available updates)
+  update --self                 update Immortal itself from its home repo now
   config [--name N|--set k=v]   read or push the agent's free-form config
   dev <status|on|off|update>    developer mode + local-build install (see below)
   calendar <get|set|enable|disable|off>

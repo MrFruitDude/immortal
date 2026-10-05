@@ -188,6 +188,15 @@ class FleetRoutes(private val context: Context) {
 
   private fun update(req: FleetHttpServer.Request): FleetHttpServer.Response {
     val body = parseJson(req.bodyText()) ?: JSONObject()
+    // Immortal itself: check the home repo now and install if newer (the auto-updater, on demand).
+    if (body.optBoolean("self", false)) {
+      if (DevMode.isEnabled(context)) return resp(409, err("dev_mode_on"))
+      val (installed, remote) = UpdateManager.updateSelfNow(context)
+      return resp(200, ok().put("self", JSONObject()
+          .put("installedVersionCode", UpdateManager.installedVersionCode(context))
+          .put("latestVersionCode", remote)
+          .put("result", when (installed) { null -> "up_to_date"; true -> "installed"; false -> "failed" })))
+    }
     val updates = findUpdatesBlocking(catalog)
     if (body.optBoolean("dryRun", false)) {
       val arr = JSONArray()

@@ -608,6 +608,14 @@ object SettingsDomains {
                       help =
                           "Hidden by default for a cleaner full-screen look. Swipe down from the top to reveal it briefly."),
                   BoolSpec(
+                      "autoUpdate",
+                      "Install updates automatically",
+                      get = { it.autoUpdate },
+                      set = ImmortalSettings::setAutoUpdate,
+                      help =
+                          "Install new Immortal releases by itself, while the Portal isn't in use. Off: " +
+                              "updates wait for a tap on the Updates tile."),
+                  BoolSpec(
                       "constrainPageWidth",
                       "Constrain page width",
                       get = { it.constrainPageWidth },
@@ -667,6 +675,7 @@ object SettingsDomains {
                   "showMiniPlayer" to "Home screen",
                   "hideStatusBar" to "Home screen",
                   "constrainPageWidth" to "Home screen",
+                  "autoUpdate" to "Updates",
                   "clockFormat" to "Clock",
                   "portalPresence" to "Presence",
                   "multiRoomEnabled" to "Audio",

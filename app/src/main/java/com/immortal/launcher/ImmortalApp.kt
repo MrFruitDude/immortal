@@ -85,6 +85,9 @@ class ImmortalApp : Application() {
     // (no-op otherwise). Off by default.
     MqttService.sync(this)
 
+    // Follow the home repo's releases without a tap on the Updates tile (setting; off in dev mode).
+    UpdateManager.startAuto(this)
+
     // Keep this Portal connected to Muse as a gadget if the user set it up (no-op otherwise).
     MuseService.sync(this)
   }
