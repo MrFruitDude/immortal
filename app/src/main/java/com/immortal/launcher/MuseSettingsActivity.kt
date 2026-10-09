@@ -36,6 +36,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -44,6 +45,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -71,6 +75,20 @@ private fun MuseSettingsScreen(onBack: () -> Unit) {
   var settings by remember { mutableStateOf(MuseConfig.load(context)) }
   var wake by remember { mutableStateOf(AlfredWake.status to AlfredWake.detail) }
   var log by remember { mutableStateOf(MuseActionLog.all()) }
+  // Re-read on resume: a sub-screen (Connect your smart home) may have changed what the rows
+  // show, and Hue pairing isn't part of the settings snapshot, so the tick forces the redraw.
+  var resumeTick by remember { mutableStateOf(0) }
+  val lifecycleOwner = LocalLifecycleOwner.current
+  DisposableEffect(lifecycleOwner) {
+    val obs = LifecycleEventObserver { _, e ->
+      if (e == Lifecycle.Event.ON_RESUME) {
+        settings = MuseConfig.load(context)
+        resumeTick++
+      }
+    }
+    lifecycleOwner.lifecycle.addObserver(obs)
+    onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+  }
   DisposableEffect(Unit) {
     val l: (MuseStatus) -> Unit = { s -> main.post { status = s } }
     MuseRuntime.addListener(l)
@@ -129,9 +147,11 @@ private fun MuseSettingsScreen(onBack: () -> Unit) {
                   fontSize = 14.sp, modifier = Modifier.padding(top = 10.dp))
         }
 
-        SettingsList(SettingsDomains.muse, settings) { k, v ->
-          SettingsDomains.muse.apply(context, JSONObject().put(k, v))
-          settings = MuseConfig.load(context)
+        key(resumeTick) {
+          SettingsList(SettingsDomains.muse, settings) { k, v ->
+            SettingsDomains.muse.apply(context, JSONObject().put(k, v))
+            settings = MuseConfig.load(context)
+          }
         }
 
         Card("What Muse did on this Portal") {

@@ -28,6 +28,8 @@ import com.immortal.launcher.FrameMode
 import com.immortal.launcher.PhotoFramePreviewActivity
 import com.immortal.launcher.PortalPresenceDetector
 import com.immortal.launcher.ScreensaverDismiss
+import com.immortal.launcher.SmartHomeConnect
+import com.immortal.launcher.SmartHomeConnectActivity
 import com.immortal.launcher.ScreensaverDismissAppActivity
 import com.immortal.launcher.ScreensaverSourcesActivity
 import com.immortal.launcher.BrightnessSchedule
@@ -1488,6 +1490,15 @@ object SettingsDomains {
                       get = { it.allowSmartHome },
                       set = MuseConfig::setAllowSmartHome,
                       help = "Let Muse control Home Assistant (below) and pair with a Philips Hue bridge."),
+                  NavSpec(
+                      "smartHomeConnect",
+                      "Connect your smart home",
+                      value = { c, _ -> SmartHomeConnect.statusLabel(c) },
+                      activity = SmartHomeConnectActivity::class.java,
+                      help =
+                          "Find Home Assistant and your Hue bridge on the network and connect them - sign " +
+                              "in to Home Assistant here, press the button on the Hue bridge. No token to paste.",
+                      visible = { _, s -> s.allowSmartHome }),
                   StringSpec(
                       "haUrl",
                       "Home Assistant URL",
@@ -1518,6 +1529,7 @@ object SettingsDomains {
                   "wakeOnlyWhenPresent" to "Voice",
                   "allowApps" to "What Muse may do",
                   "allowSmartHome" to "Smart home",
+                  "smartHomeConnect" to "Smart home",
                   "haUrl" to "Smart home",
                   "haToken" to "Smart home",
                   "speakReplies" to "Voice",
