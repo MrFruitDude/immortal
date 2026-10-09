@@ -1544,6 +1544,22 @@ object SettingsDomains {
                       help = "A long-lived access token (your HA profile › Security).",
                       visible = { _, s -> s.allowSmartHome }),
                   StringSpec(
+                      "voiceName",
+                      "Voice",
+                      get = { it.voiceName },
+                      set = MuseConfig::setVoiceName,
+                      help = "The speech engine's voice name for Alfred. Blank uses the Portal's default voice."),
+                  IntSpec(
+                      "voicePitch",
+                      "Voice pitch",
+                      get = { it.voicePitch },
+                      set = MuseConfig::setVoicePitch,
+                      min = 50,
+                      max = 150,
+                      step = 5,
+                      format = { "$it%" },
+                      help = "Lower sounds deeper. 100% is the voice's own pitch."),
+                  StringSpec(
                       "musicPlayer",
                       "Default speakers",
                       get = { it.musicPlayer },
@@ -1569,6 +1585,8 @@ object SettingsDomains {
                   "allowDisplay" to "What Muse may do",
                   "imageSeconds" to "What Muse may do",
                   "allowLan" to "What Muse may do",
+                  "voiceName" to "Voice",
+                  "voicePitch" to "Voice",
                   "musicPlayer" to "Music"),
           // The command list is sent at registration, so a permission change re-registers.
           onApplied = { c, _ ->

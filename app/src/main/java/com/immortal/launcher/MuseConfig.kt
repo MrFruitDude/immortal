@@ -109,6 +109,8 @@ object MuseConfig {
       val followUp: Boolean = true,
       val followUpSeconds: Int = DEFAULT_FOLLOW_UP_SECONDS,
       val endOfTurnMs: Int = DEFAULT_END_OF_TURN_MS,
+      val voiceName: String = "",
+      val voicePitch: Int = 100,
   )
 
   fun load(c: Context) =
@@ -130,6 +132,8 @@ object MuseConfig {
           followUp = followUp(c),
           followUpSeconds = followUpSeconds(c),
           endOfTurnMs = endOfTurnMs(c),
+          voiceName = voiceName(c),
+          voicePitch = voicePitch(c),
       )
 
   fun isEnabled(c: Context): Boolean = prefs(c).getBoolean("enabled", false)
@@ -222,6 +226,16 @@ object MuseConfig {
   fun musicPlayer(c: Context): String = prefs(c).getString("music_player", "")?.trim().orEmpty()
 
   fun setMusicPlayer(c: Context, v: String) = prefs(c).edit().putString("music_player", v.trim()).apply()
+
+  /** Alfred's text-to-speech voice by engine voice name; blank = the engine's default. */
+  fun voiceName(c: Context): String = prefs(c).getString("voice_name", "")?.trim().orEmpty()
+
+  fun setVoiceName(c: Context, v: String) = prefs(c).edit().putString("voice_name", v.trim()).apply()
+
+  /** Alfred's speaking pitch in percent (100 = the voice's own; lower sounds deeper). */
+  fun voicePitch(c: Context): Int = prefs(c).getInt("voice_pitch", 100)
+
+  fun setVoicePitch(c: Context, v: Int) = prefs(c).edit().putInt("voice_pitch", v.coerceIn(50, 150)).apply()
 
   /** Hue bridge address and application key, set by hue.pair (protocol state, not a setting). */
   fun hueBridge(c: Context): String = prefs(c).getString("hue_bridge", "").orEmpty()

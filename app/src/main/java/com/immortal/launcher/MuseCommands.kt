@@ -674,16 +674,50 @@ object MuseSpeech {
     }
   }
 
-  /** A per-call language; without one, back to the engine's default (overrides never stick). */
-  private fun applyLanguage(t: TextToSpeech, language: String?) {
+  /**
+   * A per-call language; without one, back to the engine's default (overrides never stick). Then
+   * Alfred's chosen voice (Settings › Muse › Voice) when it speaks that language, and his pitch.
+   */
+  private fun applyLanguage(context: Context, t: TextToSpeech, language: String?) {
     val locale = if (language.isNullOrBlank()) defaultLocale else Locale.forLanguageTag(language)
     if (locale != null) runCatching { t.language = locale }
+    val name = MuseConfig.voiceName(context)
+    if (name.isNotEmpty()) {
+      runCatching {
+        t.voices?.firstOrNull { it.name == name }?.let { v ->
+          if (locale == null || v.locale.language == locale.language) t.voice = v
+        }
+      }
+    }
+    runCatching { t.setPitch(MuseConfig.voicePitch(context) / 100f) }
+  }
+
+  /** Every installed voice of the engine (name, language, quality, offline), for the voice setting. */
+  fun voices(context: Context): org.json.JSONArray {
+    val out = org.json.JSONArray()
+    val t = engine(context) ?: return out
+    runCatching {
+      t.voices?.sortedBy { it.name }?.forEach { v ->
+        out.put(org.json.JSONObject().put("name", v.name).put("locale", v.locale.toLanguageTag())
+            .put("quality", v.quality).put("network", v.isNetworkConnectionRequired)
+            .put("features", org.json.JSONArray(v.features?.toList() ?: emptyList<String>())))
+      }
+    }
+    return out
+  }
+
+  /** The installed TTS engines (package + label) and which one is in use. */
+  fun engines(context: Context): org.json.JSONObject {
+    val t = engine(context)
+    val list = org.json.JSONArray()
+    runCatching { t?.engines?.forEach { list.put(org.json.JSONObject().put("name", it.name).put("label", it.label)) } }
+    return org.json.JSONObject().put("default", t?.defaultEngine.orEmpty()).put("engines", list)
   }
 
   /** Speaks [text]; returns null once done, or an error. Blocks (off the main thread). */
   fun speakAndWait(context: Context, text: String, language: String? = null, queue: Boolean = false): String? {
     val t = engine(context) ?: return "this Portal has no text-to-speech voice installed"
-    applyLanguage(t, language)
+    applyLanguage(context, t, language)
     val id = UUID.randomUUID().toString()
     val latch = CountDownLatch(1)
     waiters[id] = latch
@@ -703,7 +737,7 @@ object MuseSpeech {
   /** Renders [text] to a WAV in the cache; null if there's no engine. */
   fun synthesizeToFile(context: Context, text: String, language: String? = null): File? {
     val t = engine(context) ?: return null
-    applyLanguage(t, language)
+    applyLanguage(context, t, language)
     val dir = File(context.cacheDir, "muse-speech").apply { mkdirs() }
     dir.listFiles()?.filter { System.currentTimeMillis() - it.lastModified() > 15 * 60_000 }?.forEach { it.delete() }
     val file = File(dir, "${UUID.randomUUID()}.wav")

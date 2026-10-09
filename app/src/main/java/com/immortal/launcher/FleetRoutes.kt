@@ -527,7 +527,13 @@ class FleetRoutes(private val context: Context) {
    */
   private fun muse(req: FleetHttpServer.Request): FleetHttpServer.Response {
     return when (req.method) {
-        "GET" -> resp(200, ok().put("muse", museStatus()))
+        "GET" -> {
+          val out = ok().put("muse", museStatus())
+          // ?voices=1: the speech engine's installed voices (binds the engine; a few seconds at most).
+          if (req.queryParam("voices") == "1")
+              out.put("tts", MuseSpeech.engines(context).put("voices", MuseSpeech.voices(context)))
+          resp(200, out)
+        }
         "POST" -> {
           val body = parseJson(req.bodyText())
           if (body == null) resp(400, err("bad_json"))
