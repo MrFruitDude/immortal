@@ -85,6 +85,8 @@ object MuseConfig {
   private val SDK_TOKEN_RE = Regex(SDK_TOKEN_PATTERN)
   const val DEFAULT_IMAGE_SECONDS = 120
   const val PAIRING_WINDOW_MS = 10 * 60 * 1000L
+  const val DEFAULT_FOLLOW_UP_SECONDS = 8
+  const val DEFAULT_END_OF_TURN_MS = 800
 
   private fun prefs(c: Context) = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -104,11 +106,31 @@ object MuseConfig {
       val haUrl: String = "",
       val haToken: String = "",
       val musicPlayer: String = "",
+      val followUp: Boolean = true,
+      val followUpSeconds: Int = DEFAULT_FOLLOW_UP_SECONDS,
+      val endOfTurnMs: Int = DEFAULT_END_OF_TURN_MS,
   )
 
   fun load(c: Context) =
-      Settings(isEnabled(c), speakReplies(c), allowDisplay(c), imageSeconds(c), allowLan(c), heyButton(c), sdkToken(c).orEmpty(),
-          wakeWord(c), wakeOnlyWhenPresent(c), allowApps(c), allowSmartHome(c), haUrl(c), haToken(c), musicPlayer(c))
+      Settings(
+          enabled = isEnabled(c),
+          speakReplies = speakReplies(c),
+          allowDisplay = allowDisplay(c),
+          imageSeconds = imageSeconds(c),
+          allowLan = allowLan(c),
+          heyButton = heyButton(c),
+          sdkToken = sdkToken(c).orEmpty(),
+          wakeWord = wakeWord(c),
+          wakeOnlyWhenPresent = wakeOnlyWhenPresent(c),
+          allowApps = allowApps(c),
+          allowSmartHome = allowSmartHome(c),
+          haUrl = haUrl(c),
+          haToken = haToken(c),
+          musicPlayer = musicPlayer(c),
+          followUp = followUp(c),
+          followUpSeconds = followUpSeconds(c),
+          endOfTurnMs = endOfTurnMs(c),
+      )
 
   fun isEnabled(c: Context): Boolean = prefs(c).getBoolean("enabled", false)
 
@@ -150,7 +172,25 @@ object MuseConfig {
 
   fun setWakeOnlyWhenPresent(c: Context, on: Boolean) = prefs(c).edit().putBoolean("wake_presence", on).apply()
 
-  /** The home screen's "hey" button opens Muse push-to-talk instead of the stock assistant. */
+  /**
+   * Follow-up listening: after Alfred answers, the mic re-opens for [followUpSeconds] without the
+   * wake word, so a conversation flows; silence ends it. Off = one exchange per "Hey Alfred".
+   */
+  fun followUp(c: Context): Boolean = prefs(c).getBoolean("follow_up", true)
+
+  fun setFollowUp(c: Context, on: Boolean) = prefs(c).edit().putBoolean("follow_up", on).apply()
+
+  /** How long the follow-up window waits for you to start talking. */
+  fun followUpSeconds(c: Context): Int = prefs(c).getInt("follow_up_seconds", DEFAULT_FOLLOW_UP_SECONDS)
+
+  fun setFollowUpSeconds(c: Context, v: Int) = prefs(c).edit().putInt("follow_up_seconds", v).apply()
+
+  /** Trailing silence (ms) that means you've finished talking. */
+  fun endOfTurnMs(c: Context): Int = prefs(c).getInt("end_of_turn_ms", DEFAULT_END_OF_TURN_MS)
+
+  fun setEndOfTurnMs(c: Context, v: Int) = prefs(c).edit().putInt("end_of_turn_ms", v).apply()
+
+  /** The home screen's "hey" button starts a conversation with Alfred instead of the stock assistant. */
   fun heyButton(c: Context): Boolean = prefs(c).getBoolean("hey_button", true)
 
   fun setHeyButton(c: Context, on: Boolean) = prefs(c).edit().putBoolean("hey_button", on).apply()

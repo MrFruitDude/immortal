@@ -1437,7 +1437,7 @@ object SettingsDomains {
                       get = { it.wakeWord },
                       set = MuseConfig::setWakeWord,
                       help = "Listen for the wake word on this Portal. Detection is on-device; audio only " +
-                          "goes to Muse after the wake word, until you stop talking."),
+                          "goes to Muse once you talk to Alfred after the wake word."),
                   BoolSpec(
                       "wakeOnlyWhenPresent",
                       "Only when someone's here",
@@ -1450,7 +1450,36 @@ object SettingsDomains {
                       "Hey button opens Muse",
                       get = { it.heyButton },
                       set = MuseConfig::setHeyButton,
-                      help = "Once Muse is paired, the home screen's hey button starts push-to-talk."),
+                      help = "Once Muse is paired, the home screen's hey button starts a conversation with " +
+                          "Alfred."),
+                  BoolSpec(
+                      "followUp",
+                      "Follow-up listening",
+                      get = { it.followUp },
+                      set = MuseConfig::setFollowUp,
+                      help = "After Alfred answers, keep listening for a few seconds so you can reply " +
+                          "without saying “Hey Alfred” again. Silence ends the conversation."),
+                  IntSpec(
+                      "followUpSeconds",
+                      "Follow-up window",
+                      get = { it.followUpSeconds },
+                      set = MuseConfig::setFollowUpSeconds,
+                      min = 3,
+                      max = 20,
+                      step = 1,
+                      format = { "${it}s" },
+                      visible = { _, s -> s.followUp }),
+                  IntSpec(
+                      "endOfTurnMs",
+                      "End of turn",
+                      get = { it.endOfTurnMs },
+                      set = MuseConfig::setEndOfTurnMs,
+                      min = 400,
+                      max = 2000,
+                      step = 100,
+                      format = { "${it / 1000}.${it % 1000 / 100} s of silence" },
+                      help = "How long a pause means you've finished talking. Raise it if Alfred cuts " +
+                          "you off; lower it for snappier replies."),
                   BoolSpec(
                       "allowDisplay",
                       "Let Muse show things",
@@ -1522,6 +1551,9 @@ object SettingsDomains {
                   "haToken" to "Smart home",
                   "speakReplies" to "Voice",
                   "heyButton" to "Voice",
+                  "followUp" to "Voice",
+                  "followUpSeconds" to "Voice",
+                  "endOfTurnMs" to "Voice",
                   "allowDisplay" to "What Muse may do",
                   "imageSeconds" to "What Muse may do",
                   "allowLan" to "What Muse may do",
