@@ -30,7 +30,9 @@ import com.immortal.launcher.PortalPresenceDetector
 import com.immortal.launcher.ScreensaverDismiss
 import com.immortal.launcher.ScreensaverDismissAppActivity
 import com.immortal.launcher.ScreensaverSourcesActivity
+import com.immortal.launcher.BrightnessSchedule
 import com.immortal.launcher.ImmortalSettings
+import com.immortal.launcher.SystemSounds
 import com.immortal.launcher.MqttConfig
 import com.immortal.launcher.MqttService
 import com.immortal.launcher.MultiRoomService
@@ -600,6 +602,67 @@ object SettingsDomains {
                       set = ImmortalSettings::setShowMiniPlayer,
                       help =
                           "Show the current track, cover art and controls in the header while music is playing."),
+                  EnumSpec(
+                      "homeMode",
+                      "Home screen",
+                      get = { it.homeMode },
+                      set = ImmortalSettings::setHomeMode,
+                      options =
+                          listOf(
+                              ImmortalSettings.HOME_APPS to "Apps",
+                              ImmortalSettings.HOME_DASHBOARD to "Dashboard"),
+                      coerce = oneOf(ImmortalSettings.HOME_APPS, ImmortalSettings.HOME_DASHBOARD),
+                      help =
+                          "Dashboard shows the time, weather, music, lights and thermostats, with your " +
+                              "apps one tap away."),
+                  BoolSpec(
+                      "brightnessSchedule",
+                      "Daylight brightness",
+                      get = { it.brightnessSchedule },
+                      set = ImmortalSettings::setBrightnessSchedule,
+                      help =
+                          "Bright through the day, then fade with the sun to the evening and night levels. " +
+                              "Needs Immortal to be allowed to modify system settings."),
+                  IntSpec(
+                      "brightnessDay",
+                      "Daytime",
+                      get = { it.brightnessDay },
+                      set = ImmortalSettings::setBrightnessDay,
+                      min = 5,
+                      max = 100,
+                      step = 5,
+                      format = { "$it%" },
+                      visible = { _, s -> s.brightnessSchedule }),
+                  IntSpec(
+                      "brightnessEvening",
+                      "At sunset",
+                      get = { it.brightnessEvening },
+                      set = ImmortalSettings::setBrightnessEvening,
+                      min = 5,
+                      max = 100,
+                      step = 5,
+                      format = { "$it%" },
+                      visible = { _, s -> s.brightnessSchedule }),
+                  IntSpec(
+                      "brightnessNight",
+                      "Night",
+                      get = { it.brightnessNight },
+                      set = ImmortalSettings::setBrightnessNight,
+                      min = 1,
+                      max = 100,
+                      step = 1,
+                      format = { "$it%" },
+                      visible = { _, s -> s.brightnessSchedule }),
+                  IntSpec(
+                      "brightnessNightHour",
+                      "Night from",
+                      get = { it.brightnessNightHour },
+                      set = ImmortalSettings::setBrightnessNightHour,
+                      min = 18,
+                      max = 24,
+                      step = 1,
+                      format = { "%02d:00".format(it % 24) },
+                      visible = { _, s -> s.brightnessSchedule }),
                   BoolSpec(
                       "hideStatusBar",
                       "Hide status bar",
@@ -671,7 +734,13 @@ object SettingsDomains {
               mapOf(
                   "weatherUnit" to "Weather",
                   "weatherWidget" to "Weather",
+                  "homeMode" to "Home screen",
                   "tileSize" to "Home screen",
+                  "brightnessSchedule" to "Display",
+                  "brightnessDay" to "Display",
+                  "brightnessEvening" to "Display",
+                  "brightnessNight" to "Display",
+                  "brightnessNightHour" to "Display",
                   "showMiniPlayer" to "Home screen",
                   "hideStatusBar" to "Home screen",
                   "constrainPageWidth" to "Home screen",
@@ -687,6 +756,12 @@ object SettingsDomains {
           onApplied = { c, keys ->
             if ("hideStatusBar" in keys) SettingsGuard.applyStatusBar(c)
             if ("portalPresence" in keys) PortalPresenceDetector.sync(c)
+            if (keys.any { it.startsWith("brightness") }) {
+              BrightnessSchedule.reschedule(c)
+              // Turning it on without the "Modify system settings" grant: open the grant screen.
+              if (ImmortalSettings.load(c).brightnessSchedule && !BrightnessSchedule.canWrite(c))
+                  SystemSounds.requestWriteAccess(c)
+            }
             // The publisher advertises (or clears) the camera entities from this, so a running
             // publisher has to re-read it rather than wait for the next reconnect.
             if (keys.any { it in setOf("multiRoomEnabled", "snapcastHost", "maPort", "maUsername", "maPassword") })

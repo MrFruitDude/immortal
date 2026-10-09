@@ -304,6 +304,8 @@ grant_perms() {
   for p in $PERMISSIONS; do a shell pm grant "$PKG" "$p" >/dev/null 2>&1; done
   # Self-healing: lets Immortal reaffirm its screensaver settings if reset.
   a shell pm grant "$PKG" android.permission.WRITE_SECURE_SETTINGS >/dev/null 2>&1
+  # "Modify system settings": daylight brightness and the touch-sounds toggle.
+  a shell appops set "$PKG" WRITE_SETTINGS allow >/dev/null 2>&1
   # Lets the "Install an APK" browser see downloaded APKs, and the fleet agent
   # read/write /sdcard over WiFi.
   a shell pm grant "$PKG" android.permission.READ_EXTERNAL_STORAGE >/dev/null 2>&1

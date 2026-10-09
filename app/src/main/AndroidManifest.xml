@@ -467,6 +467,11 @@
             android:name=".SunriseReceiver"
             android:exported="false" />
 
+        <!-- Daylight brightness steps (BrightnessSchedule's inexact repeating alarm). -->
+        <receiver
+            android:name=".BrightnessReceiver"
+            android:exported="false" />
+
         <!-- Device admin (force-lock only): lets Immortal turn the screen off for the
              idle-timeout and overnight-sleep features via lockNow(). Activated by
              provisioning with `dpm set-active-admin`; a no-op until then. -->

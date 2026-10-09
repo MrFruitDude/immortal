@@ -112,6 +112,7 @@ class FleetRoutes(private val context: Context) {
                     // dialog-mode is still unattended when auto-confirm is on
                     .put("autoConfirm", SettingsGuard.isInstallConfirmEnabled(context)))
             .put("canWriteSecureSettings", SettingsGuard.canWriteSecureSettings(context))
+            .put("canWriteSettings", SystemSounds.canWrite(context))
             .put("devMode", DevMode.isEnabled(context))
             .put(
                 "capabilities",

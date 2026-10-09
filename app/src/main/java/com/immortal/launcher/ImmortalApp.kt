@@ -73,6 +73,9 @@ class ImmortalApp : Application() {
     // Arm the next sunrise wake-light alarm per the user's config.
     SunriseScheduler.reschedule(this)
 
+    // Daylight brightness: apply the level for now and arm the next fade step.
+    BrightnessSchedule.reschedule(this)
+
     // Bring up the WiFi fleet agent if provisioning enabled it (no-op otherwise).
     FleetAgentService.ensureRunning(this)
 

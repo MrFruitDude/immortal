@@ -241,6 +241,8 @@ function Grant-Perms {
   foreach ($p in ($cfg["PERMISSIONS"] -split "\s+")) { if ($p) { A shell pm grant $cfg["PKG"] $p | Out-Null } }
   # Self-healing: lets Immortal reaffirm its screensaver settings if reset.
   A shell pm grant $cfg["PKG"] android.permission.WRITE_SECURE_SETTINGS | Out-Null
+  # "Modify system settings": daylight brightness and the touch-sounds toggle.
+  A shell appops set $cfg["PKG"] WRITE_SETTINGS allow | Out-Null
   # Lets the "Install an APK" browser see downloaded APKs, and the fleet agent
   # read/write /sdcard over WiFi.
   A shell pm grant $cfg["PKG"] android.permission.READ_EXTERNAL_STORAGE | Out-Null

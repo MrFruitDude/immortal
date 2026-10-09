@@ -39,6 +39,10 @@ object ImmortalSettings {
   const val WIDGET_HOURLY = "hourly" // hour-by-hour for the next several hours
   const val WIDGET_DAILY = "daily" // a high/low for each of the next 7 days
 
+  // What the Home button shows.
+  const val HOME_APPS = "apps" // the app grid (the original launcher)
+  const val HOME_DASHBOARD = "dashboard" // the widget dashboard, with the app grid one tap away
+
   // Clock format for the launcher header, screensaver, and hourly forecast labels.
   const val CLOCK_AUTO = "auto" // follow the device's 24-hour system setting (default)
   const val CLOCK_12 = "12" // force 12-hour (e.g. 1:05, 1 PM)
@@ -81,6 +85,15 @@ object ImmortalSettings {
       // itself needs no credentials. Leave blank for a stock server with auth disabled.
       val maUsername: String = "",
       val maPassword: String = "",
+      // Daylight brightness ([BrightnessSchedule]): the system brightness follows the sun. Off by
+      // default; percentages for the day / sunset / night levels and the hour night is reached.
+      val brightnessSchedule: Boolean = false,
+      val brightnessDay: Int = 100,
+      val brightnessEvening: Int = 45,
+      val brightnessNight: Int = 15,
+      val brightnessNightHour: Int = 22,
+      // What Home shows: the app grid, or the widget dashboard ([DashboardScreen]).
+      val homeMode: String = HOME_APPS,
   )
 
   private fun prefs(c: Context) = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -102,6 +115,12 @@ object ImmortalSettings {
         maPort = p.getInt("ma_port", DEFAULT_MA_PORT),
         maUsername = p.getString("ma_username", "") ?: "",
         maPassword = p.getString("ma_password", "") ?: "",
+        brightnessSchedule = p.getBoolean("brightness_schedule", false),
+        brightnessDay = p.getInt("brightness_day", 100),
+        brightnessEvening = p.getInt("brightness_evening", 45),
+        brightnessNight = p.getInt("brightness_night", 15),
+        brightnessNightHour = p.getInt("brightness_night_hour", 22),
+        homeMode = p.getString("home_mode", HOME_APPS) ?: HOME_APPS,
     )
   }
 
@@ -181,6 +200,22 @@ object ImmortalSettings {
 
   fun setWorldClockZones(c: Context, zones: List<String>) =
       prefs(c).edit().putString("world_clock_zones", zones.joinToString(",")).apply()
+
+  fun setBrightnessSchedule(c: Context, on: Boolean) =
+      prefs(c).edit().putBoolean("brightness_schedule", on).apply()
+
+  fun setBrightnessDay(c: Context, pct: Int) = prefs(c).edit().putInt("brightness_day", pct.coerceIn(5, 100)).apply()
+
+  fun setBrightnessEvening(c: Context, pct: Int) =
+      prefs(c).edit().putInt("brightness_evening", pct.coerceIn(5, 100)).apply()
+
+  fun setBrightnessNight(c: Context, pct: Int) =
+      prefs(c).edit().putInt("brightness_night", pct.coerceIn(1, 100)).apply()
+
+  fun setBrightnessNightHour(c: Context, h: Int) =
+      prefs(c).edit().putInt("brightness_night_hour", h.coerceIn(18, 24)).apply()
+
+  fun setHomeMode(c: Context, mode: String) = prefs(c).edit().putString("home_mode", mode).apply()
 
   fun setShowMiniPlayer(c: Context, on: Boolean) =
       prefs(c).edit().putBoolean("show_mini_player", on).apply()
