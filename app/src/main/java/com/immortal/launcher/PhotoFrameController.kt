@@ -1186,8 +1186,18 @@ class PhotoFrameController(
    */
   private fun sampleSizeFor(w: Int, h: Int): Int {
     val longest = maxOf(w, h)
-    return if (longest > MAX_EDGE) Integer.highestOneBit(longest / MAX_EDGE) else 1
+    var s = if (longest > MAX_EDGE) Integer.highestOneBit(longest / MAX_EDGE) else 1
+    // Beyond the crash cap, don't decode much more than the panel can show: a 4032px phone photo
+    // on a 1280px Portal Mini otherwise lands as a ~48MB bitmap every slide. Halve while the result
+    // still covers the panel's long edge (Ken Burns zooms in a little, so never go below it).
+    val panel = displayLongEdge()
+    while (longest / (s * 2) >= panel) s *= 2
+    return s
   }
+
+  private fun displayLongEdge(): Int =
+      android.content.res.Resources.getSystem().displayMetrics.let { maxOf(it.widthPixels, it.heightPixels) }
+          .coerceAtLeast(1280)
 
   private fun decodeBoundedFile(path: String): Bitmap? {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }

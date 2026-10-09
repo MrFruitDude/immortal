@@ -318,7 +318,18 @@ object Weather {
     return out
   }
 
+  // The header, the forecast widgets, the screensaver face and the photo caption each poll on
+  // their own schedule; a short shared cache turns those into one request per URL per window.
+  private const val CACHE_TTL_MS = 10L * 60 * 1000
+  private val cache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, String>>()
+
   private fun httpGet(spec: String): String {
+    val now = System.currentTimeMillis()
+    cache[spec]?.let { (at, body) -> if (now - at < CACHE_TTL_MS) return body }
+    return httpGetUncached(spec).also { cache[spec] = now to it }
+  }
+
+  private fun httpGetUncached(spec: String): String {
     val c = URL(spec).openConnection() as HttpURLConnection
     c.connectTimeout = 8000
     c.readTimeout = 8000
