@@ -195,6 +195,12 @@ class SmartHomeConnectTest {
     assertEquals(1, s.thermostats)
   }
 
+  @Test
+  fun summary_unknownIsNotZero() {
+    assertFalse(HaSummary.UNKNOWN.surveyed)
+    assertTrue(HaSummary.of(JSONArray()).surveyed)
+  }
+
   // --- Hue discovery ---------------------------------------------------------------------------
 
   @Test

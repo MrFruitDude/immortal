@@ -12,6 +12,9 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Bundle
+import android.net.http.SslError
+import android.webkit.SslErrorHandler
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -340,6 +343,11 @@ private fun SmartHomeConnectScreen(onDone: () -> Unit) {
 
 @Composable
 private fun HaSummaryText(s: HaSummary) {
+  if (!s.surveyed) {
+    Text("Connected, but couldn't read your devices just now.", color = Color.White, fontSize = 15.sp,
+        modifier = Modifier.padding(top = 10.dp))
+    return
+  }
   Text(
       "Found ${plural(s.thermostats, "thermostat")} and ${plural(s.lights, "light")}." +
           when {
@@ -408,6 +416,20 @@ private fun HaLoginView(base: String, state: String, onCode: (String) -> Unit, o
                   // Older WebViews don't always route a script's location change through the above.
                   override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
                     if (!intercept(view, url)) super.onPageStarted(view, url, favicon)
+                  }
+
+                  // A wrong address or a self-signed https HA: say so instead of a blank page.
+                  override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                    if (!request.isForMainFrame || handled || HaAuth.isCallback(request.url.toString())) return
+                    handled = true
+                    view.post { onFailed("Couldn't open Home Assistant's sign-in page (${error.description}). Check the address.") }
+                  }
+
+                  override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
+                    handler.cancel()
+                    if (handled) return
+                    handled = true
+                    view.post { onFailed("Home Assistant's https certificate isn't trusted by this Portal. Use its http:// address on your network.") }
                   }
                 }
             loadUrl(HaAuth.authorizeUrl(base, state))

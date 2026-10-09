@@ -192,11 +192,16 @@ data class HaSummary(
     val hiloEntities: Int,
     /** Hilo thermostats, when the entity registry was readable (null = unknown). */
     val hiloThermostats: Int?,
+    /** False when the device list couldn't be read: the counts are unknown, not zero. */
+    val surveyed: Boolean = true,
 ) {
   val hasHilo: Boolean
     get() = hiloEntities > 0
 
   companion object {
+    /** Connected, but the device list couldn't be read. */
+    val UNKNOWN = HaSummary(0, 0, 0, null, surveyed = false)
+
     /**
      * [states] is HA's raw state list (`/api/states` or WS `get_states`), [registry] the entity
      * registry (WS `config/entity_registry/list`) if it could be read. An entity counts as Hilo
@@ -375,7 +380,8 @@ object SmartHomeConnect {
           ?: throw IllegalStateException(
               "Home Assistant wouldn't create a token: " + (r.optJSONObject("error")?.optString("message") ?: "unknown error"))
 
-      val states = runCatching { request(JSONObject().put("type", "get_states")).optJSONArray("result") }.getOrNull() ?: JSONArray()
+      val states = runCatching { request(JSONObject().put("type", "get_states")).optJSONArray("result") }.getOrNull()
+          ?: return longLived to HaSummary.UNKNOWN
       // Admin-only on some HA versions; the summary falls back to name/attribute hints.
       val registry = runCatching {
         request(JSONObject().put("type", "config/entity_registry/list")).takeIf { it.optBoolean("success") }?.optJSONArray("result")

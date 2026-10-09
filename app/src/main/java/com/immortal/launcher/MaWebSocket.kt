@@ -13,6 +13,9 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
+import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.SSLPeerUnverifiedException
+import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 
 /**
@@ -38,7 +41,16 @@ class MaWebSocket(
     val plain = Socket()
     plain.connect(InetSocketAddress(host, port), timeoutMs)
     val s =
-        if (secure) (SSLSocketFactory.getDefault() as SSLSocketFactory).createSocket(plain, host, port, true) else plain
+        if (secure) {
+          val tls = (SSLSocketFactory.getDefault() as SSLSocketFactory).createSocket(plain, host, port, true) as SSLSocket
+          tls.startHandshake()
+          // A raw SSLSocket checks the chain but not the name; credentials go over this socket.
+          if (!HttpsURLConnection.getDefaultHostnameVerifier().verify(host, tls.session)) {
+            tls.close()
+            throw SSLPeerUnverifiedException("certificate doesn't match $host")
+          }
+          tls
+        } else plain
     s.soTimeout = timeoutMs
     socket = s
     inp = s.getInputStream()
