@@ -16,6 +16,7 @@ import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -28,6 +29,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -116,6 +119,16 @@ internal fun DashboardScreen(
     onDispose { TimerStore.removeListener(l) }
   }
 
+  // What's playing (the hub notifies off-main; hop back before touching state).
+  var np by remember { mutableStateOf(NowPlayingHub.current) }
+  val main = remember { android.os.Handler(android.os.Looper.getMainLooper()) }
+  DisposableEffect(Unit) {
+    val l = NowPlayingHub.Listener { s -> main.post { np = s } }
+    NowPlayingHub.addListener(l)
+    onDispose { NowPlayingHub.removeListener(l) }
+  }
+  val playing = np?.active == true
+
   // Smart home: re-read while resumed; actions update optimistically and re-read shortly after.
   var home by remember { mutableStateOf<HomeControls.Snapshot?>(null) }
   var refresh by remember { mutableStateOf(0) }
@@ -133,29 +146,66 @@ internal fun DashboardScreen(
     Box(
         Modifier.fillMaxSize()
             .background(Brush.verticalGradient(listOf(Color(0x66000000), Color(0x99000000)))))
-    Column(Modifier.fillMaxSize().padding(start = 32.dp, end = 32.dp, top = 28.dp, bottom = 24.dp)) {
-      DashboardHeader(
-          use24Hour = use24Hour,
-          museHey = museHey,
-          onCalls = onCalls,
-          onOpenApps = onOpenApps,
-          onOpenStore = onOpenStore,
-          onScreensaver = onScreensaver,
-      )
-      Spacer(Modifier.height(20.dp))
-      Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        Column(Modifier.weight(1.25f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-          NowPlayingCard(Modifier.fillMaxWidth().weight(1f))
-          ImmortalWeatherWidget(Modifier.fillMaxWidth().weight(1f))
-        }
-        val snap = home
+    BoxWithConstraints(Modifier.fillMaxSize().padding(start = 32.dp, end = 32.dp, top = 28.dp, bottom = 24.dp)) {
+      val portrait = maxHeight > maxWidth
+      val snap = home
+      val actions: @Composable () -> Unit = {
+        DashboardActions(museHey, onCalls = onCalls, onOpenApps = onOpenApps, onOpenStore = onOpenStore, onScreensaver = onScreensaver)
+      }
+      // Smart-home column(s): thermostats + lights when connected, else one card explaining how.
+      val homeCards: @Composable (Modifier, Modifier) -> Unit = { climateMod, lightsMod ->
         if (snap != null && snap.configured) {
-          if (snap.homeAssistant) {
-            ClimateCard(snap, Modifier.weight(1f).fillMaxHeight(), onChanged = { refresh++ })
-          }
-          LightsCard(snap, Modifier.weight(1f).fillMaxHeight(), onChanged = { refresh++ })
+          if (snap.homeAssistant) ClimateCard(snap, climateMod, onChanged = { refresh++ })
+          LightsCard(snap, lightsMod, onChanged = { refresh++ })
         } else {
-          SetupCard(loading = snap == null, Modifier.weight(1f).fillMaxHeight())
+          SetupCard(loading = snap == null, climateMod)
+        }
+      }
+      if (portrait) {
+        // Portal Mini standing up (and Portal Go): clock on top, then a stack of cards.
+        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+          Greeting()
+          Row(verticalAlignment = Alignment.Bottom) {
+            MinuteClockText(use24Hour, fontSize = 88.sp)
+            Spacer(Modifier.width(20.dp))
+            MinuteDateText(fontSize = 22.sp, color = Color(0xFFDADADA), modifier = Modifier.padding(bottom = 12.dp))
+          }
+          Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { actions() }
+          // Idle, the music card only needs room for its hint; the rest goes to the other cards.
+          NowPlayingCard(np, Modifier.fillMaxWidth().weight(if (playing) 0.8f else 0.4f))
+          Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            ImmortalWeatherWidget(Modifier.weight(1f).fillMaxHeight())
+            if (snap != null && snap.configured && snap.homeAssistant) {
+              ClimateCard(snap, Modifier.weight(1f).fillMaxHeight(), onChanged = { refresh++ })
+            } else if (snap == null || !snap.configured) {
+              SetupCard(loading = snap == null, Modifier.weight(1f).fillMaxHeight())
+            }
+          }
+          if (snap != null && snap.configured) {
+            LightsCard(snap, Modifier.fillMaxWidth().weight(0.9f), onChanged = { refresh++ })
+          }
+        }
+      } else {
+        Column(Modifier.fillMaxSize()) {
+          Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+              Greeting()
+              Row(verticalAlignment = Alignment.Bottom) {
+                MinuteClockText(use24Hour, fontSize = 60.sp)
+                Spacer(Modifier.width(18.dp))
+                MinuteDateText(fontSize = 20.sp, color = Color(0xFFDADADA), modifier = Modifier.padding(bottom = 8.dp))
+              }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.Top) { actions() }
+          }
+          Spacer(Modifier.height(20.dp))
+          Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Column(Modifier.weight(1.25f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+              NowPlayingCard(np, Modifier.fillMaxWidth().weight(if (playing) 1f else 0.6f))
+              ImmortalWeatherWidget(Modifier.fillMaxWidth().weight(1f))
+            }
+            homeCards(Modifier.weight(1f).fillMaxHeight(), Modifier.weight(1f).fillMaxHeight())
+          }
         }
       }
     }
@@ -165,9 +215,9 @@ internal fun DashboardScreen(
 
 // --- header --------------------------------------------------------------------
 
+/** Calls / Apps / Tools / Store / Settings, the photo frame and (when paired) Alfred. */
 @Composable
-private fun DashboardHeader(
-    use24Hour: Boolean,
+private fun DashboardActions(
     museHey: Boolean,
     onCalls: () -> Unit,
     onOpenApps: () -> Unit,
@@ -175,32 +225,20 @@ private fun DashboardHeader(
     onScreensaver: () -> Unit,
 ) {
   val context = LocalContext.current
-  Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-    Column(Modifier.weight(1f)) {
-      Greeting()
-      Row(verticalAlignment = Alignment.Bottom) {
-        MinuteClockText(use24Hour, fontSize = 60.sp)
-        Spacer(Modifier.width(18.dp))
-        MinuteDateText(fontSize = 20.sp, color = Color(0xFFDADADA), modifier = Modifier.padding(bottom = 8.dp))
-      }
+  if (museHey) {
+    HeaderAction("Alfred", null, Color(0x33FFFFFF), onLongClick = { openMuse(context, talk = false) }) {
+      openMuse(context, talk = true)
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.Top) {
-      if (museHey) {
-        HeaderAction("Alfred", null, Color(0x33FFFFFF), onLongClick = { openMuse(context, talk = false) }) {
-          openMuse(context, talk = true)
-        }
-      }
-      HeaderAction("Photos", GLYPH_PHOTO, Color(0x33FFFFFF), onClick = onScreensaver)
-      HeaderAction("Calls", GLYPH_CALL, Color(0xFF1FA463), onClick = onCalls)
-      HeaderAction("Apps", GLYPH_APPS, Accent, onClick = onOpenApps)
-      HeaderAction("Tools", GLYPH_TOOLS, Color(0x33FFFFFF)) {
-        runCatching { context.startActivity(Intent(context, ToolsActivity::class.java)) }
-      }
-      HeaderAction("Store", GLYPH_STORE, Color(0x33FFFFFF), onClick = onOpenStore)
-      HeaderAction("Settings", GLYPH_GEAR, Color(0x33FFFFFF)) {
-        runCatching { context.startActivity(Intent(context, ImmortalSettingsActivity::class.java)) }
-      }
-    }
+  }
+  HeaderAction("Photos", GLYPH_PHOTO, Color(0x33FFFFFF), onClick = onScreensaver)
+  HeaderAction("Calls", GLYPH_CALL, Color(0xFF1FA463), onClick = onCalls)
+  HeaderAction("Apps", GLYPH_APPS, Accent, onClick = onOpenApps)
+  HeaderAction("Tools", GLYPH_TOOLS, Color(0x33FFFFFF)) {
+    runCatching { context.startActivity(Intent(context, ToolsActivity::class.java)) }
+  }
+  HeaderAction("Store", GLYPH_STORE, Color(0x33FFFFFF), onClick = onOpenStore)
+  HeaderAction("Settings", GLYPH_GEAR, Color(0x33FFFFFF)) {
+    runCatching { context.startActivity(Intent(context, ImmortalSettingsActivity::class.java)) }
   }
 }
 
@@ -257,15 +295,8 @@ private fun DashCard(title: String, modifier: Modifier = Modifier, content: @Com
 }
 
 @Composable
-private fun NowPlayingCard(modifier: Modifier = Modifier) {
+private fun NowPlayingCard(np: NowPlayingState?, modifier: Modifier = Modifier) {
   val context = LocalContext.current
-  var np by remember { mutableStateOf(NowPlayingHub.current) }
-  val main = remember { android.os.Handler(android.os.Looper.getMainLooper()) }
-  DisposableEffect(Unit) {
-    val l = NowPlayingHub.Listener { s -> main.post { np = s } }
-    NowPlayingHub.addListener(l)
-    onDispose { NowPlayingHub.removeListener(l) }
-  }
   val s = np
   val cover by
       produceState<android.graphics.Bitmap?>(s?.artBitmap, s?.artBitmap, s?.artUrl) {
@@ -413,12 +444,12 @@ private fun LightsCard(snap: HomeControls.Snapshot, modifier: Modifier, onChange
       return@DashCard
     }
     val rows = snap.lights.chunked(2)
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
       rows.forEach { pair ->
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
           pair.forEach { light ->
             val on = flipped[light.id] ?: light.on
-            Column(
+            Row(
                 Modifier.weight(1f)
                     .clip(RoundedCornerShape(18.dp))
                     .background(if (on) Color(0xFFF4F1E8) else Color(0x14FFFFFF))
@@ -431,20 +462,23 @@ private fun LightsCard(snap: HomeControls.Snapshot, modifier: Modifier, onChange
                         onChanged()
                       }
                     }
-                    .padding(12.dp)) {
-                  Glyph(GLYPH_BULB, 24.dp, if (on) Warm else Muted)
-                  Spacer(Modifier.height(6.dp))
-                  Text(
-                      light.name,
-                      color = if (on) Color(0xFF16161A) else Color.White,
-                      fontSize = 14.sp,
-                      fontWeight = FontWeight.Medium,
-                      maxLines = 1,
-                      overflow = TextOverflow.Ellipsis)
-                  Text(
-                      if (!on) "Off" else light.brightness?.let { "$it%" } ?: "On",
-                      color = if (on) Color(0xFF55555E) else Muted,
-                      fontSize = 12.sp)
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                  Glyph(GLYPH_BULB, 26.dp, if (on) Warm else Muted)
+                  Spacer(Modifier.width(10.dp))
+                  Column {
+                    Text(
+                        light.name,
+                        color = if (on) Color(0xFF16161A) else Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis)
+                    Text(
+                        if (!on) "Off" else light.brightness?.let { "$it%" } ?: "On",
+                        color = if (on) Color(0xFF55555E) else Muted,
+                        fontSize = 12.sp)
+                  }
                 }
           }
           if (pair.size == 1) Spacer(Modifier.weight(1f))
