@@ -8,6 +8,7 @@
 package com.immortal.launcher
 
 import android.content.BroadcastReceiver
+import androidx.activity.compose.setContent
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -81,6 +82,25 @@ class PhotoFramePreviewActivity : ComponentActivity() {
     // (or the night clock), the stock pre-Immortal behaviour, instead of the PIN pad (issue #158).
     // Placed after the overnight-dark early-return above so it never fights the night blanking.
     showOverKeyguard()
+
+    if (nightClock) {
+      // Bedside screen: a dim clock with light buttons ([NightClockScreen]). Force the screen on for
+      // the window and dim it to a soft glow; brightness is window-scoped, so it restores by itself
+      // when this activity finishes (tap, or window end).
+      window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+      window.attributes = window.attributes.apply { screenBrightness = NIGHT_BRIGHTNESS }
+      val use24 = ImmortalSettings.use24HourClock(this)
+      setContent {
+        com.immortal.launcher.ui.theme.SampleAppTheme(darkTheme = true) {
+          NightClockScreen(use24) {
+            PresenceHub.onInteraction(this)
+            finish()
+          }
+        }
+      }
+      nightWatch.post(nightWatchTick)
+      return
+    }
 
     frame = PhotoFrameController(this, showWelcome = intent.getBooleanExtra(EXTRA_SHOW_WELCOME, false))
     // Only the screensaver-continuation launch (DreamPolicy's force-wake handoff) honours the
@@ -195,6 +215,8 @@ class PhotoFramePreviewActivity : ComponentActivity() {
   // Feed all touches to the controller's gesture detector (tap = exit,
   // horizontal swipe = prev/next) at the window level for reliability.
   override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+    // The night clock is Compose (its light buttons take taps); only the photo frame needs this.
+    if (!this::frame.isInitialized) return super.dispatchTouchEvent(ev)
     frame.onTouch(ev)
     return true
   }

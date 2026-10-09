@@ -97,6 +97,13 @@ object HomeControls {
     }
   }
 
+  /** Every light off: the whole Hue bridge and/or every Home Assistant light. */
+  fun allOff(c: Context) {
+    if (MuseHue.paired(c)) runCatching { MuseHue.set(c, JSONObject().put("on", false)) }
+    if (MuseHomeAssistant.configured(c))
+        runCatching { MuseHomeAssistant.callService(c, "light", "turn_off", JSONObject().put("entity_id", "all")) }
+  }
+
   /** Recall a Hue scene on its room (or on every light for an all-lights scene). */
   fun activate(c: Context, scene: Scene) {
     val p = JSONObject().put("scene", scene.id)
