@@ -43,6 +43,10 @@ object ImmortalSettings {
   const val HOME_APPS = "apps" // the app grid (the original launcher)
   const val HOME_DASHBOARD = "dashboard" // the widget dashboard, with the app grid one tap away
 
+  // How the dashboard is drawn.
+  const val DASH_CLASSIC = "classic" // the weather-sky wallpaper with translucent cards (default)
+  const val DASH_GLASS = "glass" // a GL "liquid glass" stage behind the cards ([GlassStage])
+
   // Clock format for the launcher header, screensaver, and hourly forecast labels.
   const val CLOCK_AUTO = "auto" // follow the device's 24-hour system setting (default)
   const val CLOCK_12 = "12" // force 12-hour (e.g. 1:05, 1 PM)
@@ -94,6 +98,12 @@ object ImmortalSettings {
       val brightnessNightHour: Int = 22,
       // What Home shows: the app grid, or the widget dashboard ([DashboardScreen]).
       val homeMode: String = HOME_APPS,
+      // How the dashboard looks: classic, or the GL liquid-glass stage (falls back to classic on
+      // its own when GL isn't usable). Classic by default so nothing changes until it's chosen.
+      val dashboardStyle: String = DASH_CLASSIC,
+      // Log the glass stage's average frame time every 10 s (logcat tag ImmortalGlass), for
+      // checking its cost on real hardware. Off by default.
+      val glassFrameLog: Boolean = false,
   )
 
   private fun prefs(c: Context) = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -121,6 +131,8 @@ object ImmortalSettings {
         brightnessNight = p.getInt("brightness_night", 15),
         brightnessNightHour = p.getInt("brightness_night_hour", 22),
         homeMode = p.getString("home_mode", HOME_APPS) ?: HOME_APPS,
+        dashboardStyle = p.getString("dashboard_style", DASH_CLASSIC) ?: DASH_CLASSIC,
+        glassFrameLog = p.getBoolean("glass_frame_log", false),
     )
   }
 
@@ -216,6 +228,16 @@ object ImmortalSettings {
       prefs(c).edit().putInt("brightness_night_hour", h.coerceIn(18, 24)).apply()
 
   fun setHomeMode(c: Context, mode: String) = prefs(c).edit().putString("home_mode", mode).apply()
+
+  fun dashboardStyle(c: Context): String = prefs(c).getString("dashboard_style", DASH_CLASSIC) ?: DASH_CLASSIC
+
+  fun setDashboardStyle(c: Context, style: String) =
+      prefs(c).edit().putString("dashboard_style", style).apply()
+
+  fun glassFrameLog(c: Context): Boolean = prefs(c).getBoolean("glass_frame_log", false)
+
+  fun setGlassFrameLog(c: Context, on: Boolean) =
+      prefs(c).edit().putBoolean("glass_frame_log", on).apply()
 
   fun setShowMiniPlayer(c: Context, on: Boolean) =
       prefs(c).edit().putBoolean("show_mini_player", on).apply()
