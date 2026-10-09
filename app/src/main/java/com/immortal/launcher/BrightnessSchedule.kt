@@ -103,7 +103,7 @@ object BrightnessSchedule {
       val target = (pct * 255 / 100).coerceIn(1, 255)
       if (Settings.System.getInt(cr, Settings.System.SCREEN_BRIGHTNESS, -1) != target) {
         Settings.System.putInt(cr, Settings.System.SCREEN_BRIGHTNESS, target)
-        Log.i(TAG, "brightness $pct% (sun ${rise / 60}:%02d-${set / 60}:%02d)".format(rise % 60, set % 60))
+        Log.i(TAG, "brightness $pct%% (sun %d:%02d-%d:%02d)".format(rise / 60, rise % 60, set / 60, set % 60))
       }
     }
         .onFailure { Log.w(TAG, "brightness write failed: ${it.message}") }
