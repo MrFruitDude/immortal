@@ -265,7 +265,9 @@ class HomeActivity : ComponentActivity() {
         runCatching {
           val v = act.window.decorView
           val bmp = android.graphics.Bitmap.createBitmap(v.width, v.height, android.graphics.Bitmap.Config.ARGB_8888)
-          v.draw(android.graphics.Canvas(bmp))
+          // Not plain v.draw(): a software canvas can't see the liquid-glass GL stage, so its last
+          // frame is composited underneath the UI (identical to v.draw() when there's no stage).
+          GlassStage.drawWindow(v, android.graphics.Canvas(bmp))
           png =
               java.io.ByteArrayOutputStream().use {
                 bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
@@ -321,6 +323,8 @@ class HomeActivity : ComponentActivity() {
   // consumes it. Renews the overnight session; a no-op outside the window.
   override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
     SleepScheduler.onInteraction(this)
+    // Liquid-glass dashboard: a touch wakes the background's motion for a while (no-op otherwise).
+    if (ev.actionMasked == MotionEvent.ACTION_DOWN) GlassStage.poke()
     return super.dispatchTouchEvent(ev)
   }
 

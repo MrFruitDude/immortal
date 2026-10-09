@@ -51,6 +51,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.vector.PathParser
@@ -103,12 +104,15 @@ internal fun DashboardScreen(
   var museHey by remember { mutableStateOf(museHeyEnabled(context)) }
   var use24Hour by remember { mutableStateOf(ImmortalSettings.use24HourClock(context)) }
   var timerRinging by remember { mutableStateOf(TimerStore.load(context).ringing) }
+  var dashStyle by remember { mutableStateOf(ImmortalSettings.dashboardStyle(context)) }
   val lifecycleOwner = LocalLifecycleOwner.current
   DisposableEffect(lifecycleOwner) {
     val obs = LifecycleEventObserver { _, e ->
       if (e == Lifecycle.Event.ON_RESUME) {
         museHey = museHeyEnabled(context)
         use24Hour = ImmortalSettings.use24HourClock(context)
+        dashStyle = ImmortalSettings.dashboardStyle(context)
+        GlassStage.clearStall()
       }
     }
     lifecycleOwner.lifecycle.addObserver(obs)
@@ -146,7 +150,16 @@ internal fun DashboardScreen(
     // The live weather sky, unless the user picked a photo as their wallpaper (gradients and the
     // plain sky are the app grid's; the dashboard is where the weather lives).
     val wallpaper = remember { WallpaperConfig.load(context).mode }
-    if (!WallpaperConfig.isPhoto(wallpaper)) {
+    // "Liquid glass" replaces the weather sky (never a photo wallpaper) with the GL stage; it
+    // falls back here by itself when GL fails or stalls (GlassStage.usable / stalled).
+    val glass =
+        dashStyle == ImmortalSettings.DASH_GLASS &&
+            !WallpaperConfig.isPhoto(wallpaper) &&
+            !GlassStage.stalled.value &&
+            GlassStage.usable(context)
+    if (glass) {
+      LiquidGlassBackground(Modifier.fillMaxSize(), pokeKey = np?.title)
+    } else if (!WallpaperConfig.isPhoto(wallpaper)) {
       WeatherSky(Modifier.fillMaxSize())
       Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x33000000), Color(0x59000000)))))
     } else {
@@ -291,9 +304,7 @@ private fun HeaderAction(
 private fun DashCard(title: String, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
   Column(
       modifier
-          .clip(RoundedCornerShape(26.dp))
-          .background(CardFill)
-          .border(1.dp, CardEdge, RoundedCornerShape(26.dp))
+          .dashboardCardSurface(26.dp, SolidColor(CardFill), CardEdge)
           .padding(18.dp)) {
         Text(title, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
         Spacer(Modifier.height(12.dp))
@@ -336,9 +347,12 @@ private fun NowPlayingCard(np: NowPlayingState?, modifier: Modifier = Modifier) 
   val tint = remember(bmp) { bmp?.let { dominantColor(it) } ?: Color(0xFF2A2F3A) }
   Row(
       modifier
-          .clip(RoundedCornerShape(26.dp))
-          .background(Brush.linearGradient(listOf(tint, darken(tint, 0.55f))))
-          .border(1.dp, CardEdge, RoundedCornerShape(26.dp))
+          .dashboardCardSurface(
+              26.dp,
+              Brush.linearGradient(listOf(tint, darken(tint, 0.55f))),
+              CardEdge,
+              // On glass, the cover's colour is a wash over the frosted sky rather than a fill.
+              glassTint = Brush.linearGradient(listOf(tint.copy(alpha = 0.42f), darken(tint, 0.55f).copy(alpha = 0.16f))))
           .padding(14.dp),
       verticalAlignment = Alignment.CenterVertically) {
         Box(

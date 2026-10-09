@@ -33,6 +33,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -63,9 +64,7 @@ internal fun DashboardWeatherCard(modifier: Modifier = Modifier) {
       }
   BoxWithConstraints(
       modifier
-          .clip(RoundedCornerShape(26.dp))
-          .background(Color(0x33101826))
-          .border(1.dp, Color(0x29FFFFFF), RoundedCornerShape(26.dp))
+          .dashboardCardSurface(26.dp, SolidColor(Color(0x33101826)), Color(0x29FFFFFF))
           .padding(18.dp)) {
         val w = c
         if (w == null) {
