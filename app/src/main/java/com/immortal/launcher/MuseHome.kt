@@ -43,7 +43,8 @@ object MuseHomeAssistant {
       if (!search.isNullOrBlank() && !(id.contains(search, true) || name.contains(search, true))) continue
       val keep = JSONObject().put("entity_id", id).put("state", e.optString("state")).put("name", name)
       for (k in listOf("brightness", "color_mode", "temperature", "current_temperature", "hvac_action", "unit_of_measurement",
-          "media_title", "media_artist", "volume_level", "device_class", "is_hue_group", "group_name")) if (attrs.has(k)) keep.put(k, attrs.get(k))
+          "media_title", "media_artist", "volume_level", "device_class", "is_hue_group", "group_name",
+          "next_events")) if (attrs.has(k)) keep.put(k, attrs.get(k))
       out.put(keep)
       if (out.length() >= limit) break
     }
@@ -55,6 +56,17 @@ object MuseHomeAssistant {
     val r = call(c, "POST", "/api/services/$domain/$service", data.toString())
     val changed = runCatching { JSONArray(r) }.getOrNull()
     return JSONObject().put("changed", changed?.length() ?: 0)
+  }
+
+  /**
+   * One entity's state history from [startIsoUtc] (`yyyy-MM-ddTHH:mm:ssZ`) to now, compact:
+   * Home Assistant's minimal response without attributes. The raw JSON (an array of one array of
+   * `{state, last_changed}`), for the caller to parse.
+   */
+  fun history(c: Context, entityId: String, startIsoUtc: String): String {
+    require(Regex("[a-z0-9_]+\\.[a-z0-9_]+").matches(entityId)) { "bad entity id" }
+    require(Regex("[0-9T:Z-]+").matches(startIsoUtc)) { "bad start time" }
+    return call(c, "GET", "/api/history/period/$startIsoUtc?filter_entity_id=$entityId&minimal_response&no_attributes", null)
   }
 
   private fun call(c: Context, method: String, path: String, body: String?): String {
