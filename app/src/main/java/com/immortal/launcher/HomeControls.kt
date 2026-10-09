@@ -71,7 +71,7 @@ object HomeControls {
       runCatching {
             val entities = MuseHomeAssistant.states(c, null, null, 2000).getJSONArray("entities")
             snap = snap.copy(thermostats = parseThermostats(entities))
-            if (!hue) snap = snap.copy(lights = parseHaLights(entities))
+            if (!hue) snap = snap.copy(lights = parseHaLights(entities), scenes = parseHaScenes(entities))
           }
           .onFailure { errors += "Home Assistant: ${it.message}" }
     }
@@ -106,6 +106,10 @@ object HomeControls {
 
   /** Recall a Hue scene on its room (or on every light for an all-lights scene). */
   fun activate(c: Context, scene: Scene) {
+    if (scene.id.startsWith("ha:")) {
+      MuseHomeAssistant.callService(c, "scene", "turn_on", JSONObject().put("entity_id", scene.id.removePrefix("ha:")))
+      return
+    }
     val p = JSONObject().put("scene", scene.id)
     if (scene.roomId.isNotEmpty()) p.put("room", scene.roomId)
     MuseHue.set(c, p)
@@ -137,10 +141,33 @@ object HomeControls {
           }
           .take(MAX_THERMOSTATS)
 
-  internal fun parseHaLights(entities: JSONArray): List<Light> =
+  internal fun parseHaLights(entities: JSONArray): List<Light> {
+    val all =
+        (0 until entities.length())
+            .map { entities.getJSONObject(it) }
+            .filter { it.optString("entity_id").startsWith("light.") && it.optString("state") in setOf("on", "off") }
+    // Hue reaches Home Assistant as one light per bulb plus a group per room: show the rooms when
+    // there are any (the whole-home group last), like the Hue app does.
+    val rooms = all.filter { it.optBoolean("is_hue_group") }.sortedBy { it.optString("name").equals("Home", true) }
+    return toLights(rooms.ifEmpty { all })
+  }
+
+  /** Home Assistant scenes (Hue's arrive as "Home Honolulu" with group "Home"; keep "Honolulu"). */
+  internal fun parseHaScenes(entities: JSONArray): List<Scene> =
       (0 until entities.length())
           .map { entities.getJSONObject(it) }
-          .filter { it.optString("entity_id").startsWith("light.") && it.optString("state") in setOf("on", "off") }
+          .filter { it.optString("entity_id").startsWith("scene.") && it.optString("state") != "unavailable" }
+          .map {
+            val room = it.optString("group_name")
+            val full = it.optString("name").ifBlank { it.getString("entity_id").substringAfter('.') }
+            val name = if (room.isNotBlank() && full.startsWith("$room ", true)) full.substring(room.length + 1) else full
+            Scene(id = "ha:" + it.getString("entity_id"), name = name.replaceFirstChar { c -> c.uppercase() }, roomId = "", room = room)
+          }
+          .sortedBy { it.name.lowercase() }
+          .take(MAX_SCENES)
+
+  private fun toLights(list: List<JSONObject>): List<Light> =
+      list
           .map {
             val bri = it.optDoubleOrNull("brightness")
             Light(

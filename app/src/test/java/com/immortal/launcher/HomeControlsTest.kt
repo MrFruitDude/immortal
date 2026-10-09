@@ -67,4 +67,19 @@ class HomeControlsTest {
     val s = HomeControls.parseHueScenes(scenes, rooms)
     assertEquals(listOf("Honolulu|Bedroom", "Honolulu|Living room", "Pumpkin Spice|Living room"), s.map { it.name + "|" + it.room })
   }
+
+  @Test
+  fun haHue_prefersRoomGroups_wholeHomeLast_andStripsSceneGroupPrefix() {
+    val e =
+        JSONArray(
+            """[{"entity_id":"light.home","state":"on","name":"Home","is_hue_group":true},
+               {"entity_id":"light.bedroom_bedroom","state":"off","name":"Bedroom","is_hue_group":true},
+               {"entity_id":"light.lamp","state":"on","name":"Lamp"},
+               {"entity_id":"scene.home_pumpkin_spice","state":"2026-10-09","name":"Home Pumpkin spice","group_name":"Home"},
+               {"entity_id":"scene.home_honolulu","state":"unknown","name":"Home Honolulu","group_name":"Home"}]""")
+    assertEquals(listOf("Bedroom", "Home"), HomeControls.parseHaLights(e).map { it.name })
+    val sc = HomeControls.parseHaScenes(e)
+    assertEquals(listOf("Honolulu", "Pumpkin spice"), sc.map { it.name })
+    assertEquals("ha:scene.home_honolulu", sc[0].id)
+  }
 }

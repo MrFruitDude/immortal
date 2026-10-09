@@ -43,7 +43,7 @@ object MuseHomeAssistant {
       if (!search.isNullOrBlank() && !(id.contains(search, true) || name.contains(search, true))) continue
       val keep = JSONObject().put("entity_id", id).put("state", e.optString("state")).put("name", name)
       for (k in listOf("brightness", "color_mode", "temperature", "current_temperature", "hvac_action", "unit_of_measurement",
-          "media_title", "media_artist", "volume_level", "device_class")) if (attrs.has(k)) keep.put(k, attrs.get(k))
+          "media_title", "media_artist", "volume_level", "device_class", "is_hue_group", "group_name")) if (attrs.has(k)) keep.put(k, attrs.get(k))
       out.put(keep)
       if (out.length() >= limit) break
     }
