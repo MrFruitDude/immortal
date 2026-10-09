@@ -13,6 +13,7 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
+import javax.net.ssl.SSLSocketFactory
 
 /**
  * A minimal RFC 6455 WebSocket text client over a raw socket — just enough to talk to
@@ -21,15 +22,23 @@ import java.net.Socket
  * ([SnapcastControlClient], [MultiRoomArt]). Text frames only; replies to pings.
  * Blocking — call off the main thread.
  */
-class MaWebSocket(private val host: String, private val port: Int, private val path: String = "/ws") {
+class MaWebSocket(
+    private val host: String,
+    private val port: Int,
+    private val path: String = "/ws",
+    /** wss:// — TLS over the same socket (Home Assistant behind https). Off for Music Assistant. */
+    private val secure: Boolean = false,
+) {
   private var socket: Socket? = null
   private var inp: InputStream? = null
   private var out: OutputStream? = null
   private val rnd = java.security.SecureRandom()
 
   fun connect(timeoutMs: Int = 6000): Boolean {
-    val s = Socket()
-    s.connect(InetSocketAddress(host, port), timeoutMs)
+    val plain = Socket()
+    plain.connect(InetSocketAddress(host, port), timeoutMs)
+    val s =
+        if (secure) (SSLSocketFactory.getDefault() as SSLSocketFactory).createSocket(plain, host, port, true) else plain
     s.soTimeout = timeoutMs
     socket = s
     inp = s.getInputStream()
