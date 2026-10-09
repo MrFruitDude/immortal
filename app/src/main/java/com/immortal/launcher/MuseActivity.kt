@@ -67,13 +67,12 @@ import com.immortal.launcher.ui.theme.SampleAppTheme
 import kotlinx.coroutines.delay
 
 /**
- * Alfred's stage: the character, what he's saying, and the conversation. Hold Alfred (or the
- * talk button) to speak; tap him to pet him. Opened from the home "hey" button, Tools, Settings,
- * and by "Hey Alfred" — in which case it steps aside again once the exchange is over.
+ * Alfred's full screen: the character, the conversation so far, and Muse's connection and pairing
+ * status. The talk button starts a hands-free conversation ([AlfredSession]); holding Alfred is
+ * still push-to-talk; tap him to pet him. Opened from Tools, Settings, a long-press on the home
+ * Alfred button, or when a conversation can't start from the popover.
  */
 class MuseActivity : ComponentActivity() {
-  private var fromWake by mutableStateOf(false)
-
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     // Arriving here is a deliberate exit from the screensaver, not a force-wake.
@@ -83,23 +82,27 @@ class MuseActivity : ComponentActivity() {
       setShowWhenLocked(true)
       setTurnScreenOn(true)
     }
-    fromWake = intent.getBooleanExtra(EXTRA_FROM_WAKE, false)
     val talk = intent.getBooleanExtra(EXTRA_TALK, false)
     setContent {
       SampleAppTheme(darkTheme = true) {
-        MuseScreen(fromWake = fromWake, startTalking = talk, onClose = { finish() })
+        MuseScreen(startTalking = talk, onClose = { finish() })
       }
     }
   }
 
-  override fun onNewIntent(intent: Intent) {
-    super.onNewIntent(intent)
-    if (intent.getBooleanExtra(EXTRA_FROM_WAKE, false)) fromWake = true
+  // This screen has its own Alfred: the conversation popover keeps only its edge glow here.
+  override fun onResume() {
+    super.onResume()
+    AlfredOverlay.setCardSuppressed(true)
+  }
+
+  override fun onPause() {
+    AlfredOverlay.setCardSuppressed(false)
+    super.onPause()
   }
 
   companion object {
     const val EXTRA_TALK = "talk"
-    const val EXTRA_FROM_WAKE = "from_wake"
   }
 }
 
@@ -108,22 +111,26 @@ private val Panel = Color(0xFF151726)
 private val Muted = Color(0xFF9CA0B8)
 
 @Composable
-private fun MuseScreen(fromWake: Boolean, startTalking: Boolean, onClose: () -> Unit) {
+private fun MuseScreen(startTalking: Boolean, onClose: () -> Unit) {
   val context = LocalContext.current
   val main = remember { Handler(Looper.getMainLooper()) }
   var status by remember { mutableStateOf(MuseRuntime.status) }
   var alfred by remember { mutableStateOf(Alfred.state) }
   var wakeStatus by remember { mutableStateOf(AlfredWake.status) }
+  var session by remember { mutableStateOf(AlfredSession.phase) }
 
   DisposableEffect(Unit) {
     val ls: (MuseStatus) -> Unit = { s -> main.post { status = s } }
     val la: (Alfred.State) -> Unit = { s -> main.post { alfred = s } }
+    val lp: (AlfredSessionMachine.Phase) -> Unit = { p -> main.post { session = p } }
     MuseRuntime.addListener(ls)
     Alfred.addListener(la)
+    AlfredSession.addListener(lp)
     if (MuseConfig.isEnabled(context)) MuseService.sync(context)
     onDispose {
       MuseRuntime.removeListener(ls)
       Alfred.removeListener(la)
+      AlfredSession.removeListener(lp)
     }
   }
   LaunchedEffect(Unit) {
@@ -132,26 +139,27 @@ private fun MuseScreen(fromWake: Boolean, startTalking: Boolean, onClose: () -> 
       delay(1000)
     }
   }
-  // After "Hey Alfred": step aside a few seconds after the exchange settles.
-  LaunchedEffect(fromWake, alfred.turnActive, alfred.mode) {
-    if (fromWake && !alfred.turnActive && (alfred.mode == Alfred.Mode.IDLE || alfred.mode == Alfred.Mode.ERROR)) {
-      delay(if (alfred.mode == Alfred.Mode.ERROR) 4000 else 7000)
-      if (!Alfred.state.turnActive) onClose()
-    }
-  }
-
+  // Talk = a hands-free conversation (turn detection, follow-ups); holding Alfred = push-to-talk.
+  var pendingPtt by remember { mutableStateOf(false) }
   val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-    if (granted) Thread({ Alfred.startPushToTalk(context) }, "alfred-ptt").start()
-    else Alfred.announce("I need the microphone to hear you.")
+    if (!granted) Alfred.announce("I need the microphone to hear you.")
+    else if (pendingPtt) Thread({ Alfred.startPushToTalk(context) }, "alfred-ptt").start()
+    else AlfredSession.start(context)
   }
+  fun hasMic() = context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
   fun talk() {
-    if (context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
-        Thread({ Alfred.startPushToTalk(context) }, "alfred-ptt").start()
+    pendingPtt = false
+    if (hasMic()) AlfredSession.start(context) else micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+  }
+  fun pushToTalk() {
+    pendingPtt = true
+    if (hasMic()) Thread({ Alfred.startPushToTalk(context) }, "alfred-ptt").start()
     else micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
   }
   LaunchedEffect(startTalking) { if (startTalking && MuseRuntime.currentLink() != null) talk() }
 
   val connected = status.state == MuseStatus.State.CONNECTED
+  val inSession = session != AlfredSessionMachine.Phase.IDLE
   val mode = when {
     status.state == MuseStatus.State.PAIRING -> Alfred.Mode.BOOT
     status.state == MuseStatus.State.DISABLED || status.state == MuseStatus.State.UNPAIRED -> Alfred.Mode.OFF
@@ -169,15 +177,15 @@ private fun MuseScreen(fromWake: Boolean, startTalking: Boolean, onClose: () -> 
       if (landscape) {
         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
           Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-            Stage(mode, connected, ::talk)
+            Stage(mode, connected && !inSession, ::pushToTalk)
           }
           Column(Modifier.weight(1f).fillMaxHeight().padding(start = 12.dp), verticalArrangement = Arrangement.Center) {
-            Conversation(alfred, status, connected, ::talk, modifier = Modifier.weight(1f, fill = false))
+            Conversation(alfred, status, connected, inSession, ::talk, modifier = Modifier.weight(1f, fill = false))
           }
         }
       } else {
-        Box(Modifier.fillMaxWidth().weight(1.15f), contentAlignment = Alignment.Center) { Stage(mode, connected, ::talk) }
-        Column(Modifier.fillMaxWidth().weight(1f)) { Conversation(alfred, status, connected, ::talk, modifier = Modifier.weight(1f)) }
+        Box(Modifier.fillMaxWidth().weight(1.15f), contentAlignment = Alignment.Center) { Stage(mode, connected && !inSession, ::pushToTalk) }
+        Column(Modifier.fillMaxWidth().weight(1f)) { Conversation(alfred, status, connected, inSession, ::talk, modifier = Modifier.weight(1f)) }
       }
     }
   }
@@ -236,7 +244,14 @@ private fun RoundIcon(glyph: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun Conversation(alfred: Alfred.State, status: MuseStatus, connected: Boolean, talk: () -> Unit, modifier: Modifier) {
+private fun Conversation(
+    alfred: Alfred.State,
+    status: MuseStatus,
+    connected: Boolean,
+    inSession: Boolean,
+    talk: () -> Unit,
+    modifier: Modifier,
+) {
   val context = LocalContext.current
   Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
     // The live caption: what Alfred is doing right now.
@@ -246,7 +261,8 @@ private fun Conversation(alfred: Alfred.State, status: MuseStatus, connected: Bo
       status.state == MuseStatus.State.OFFLINE && !alfred.turnActive -> status.detail.ifEmpty { "I can't reach Muse right now." }
       alfred.caption.isNotEmpty() -> alfred.caption
       alfred.mode == Alfred.Mode.SPEAKING -> ""
-      else -> "Hold me to talk, or say “Hey ${Alfred.NAME}”."
+      inSession -> "Just talk. I'll answer when you stop."
+      else -> "Tap Talk, or say “Hey ${Alfred.NAME}”. You can also hold me to talk."
     }
     AnimatedContent(caption, transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(160)) }, label = "caption") { c ->
       Text(c, color = Muted, fontSize = 20.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
@@ -259,7 +275,7 @@ private fun Conversation(alfred: Alfred.State, status: MuseStatus, connected: Bo
     }
     Spacer(Modifier.height(14.dp))
     when {
-      connected -> TalkButton(alfred.mode == Alfred.Mode.LISTENING, alfred.turnActive, talk)
+      connected -> TalkButton(alfred.mode == Alfred.Mode.LISTENING && !inSession, alfred.turnActive, inSession, talk)
       status.state == MuseStatus.State.UNPAIRED || status.state == MuseStatus.State.DISABLED ->
           Pill("Pair with Muse", Color(0xFF6C5CE7)) { MuseService.pair(context) }
       status.state == MuseStatus.State.PAIRING -> Pill("Stop pairing", Color(0xFF3A3D55)) { MuseService.stopPairing(context) }
@@ -284,18 +300,29 @@ private fun Bubble(line: Alfred.Line) {
 }
 
 @Composable
-private fun TalkButton(listening: Boolean, busy: Boolean, talk: () -> Unit) {
-  val color = if (listening) Color(0xFFE0565B) else Color(0xFF6C5CE7)
+private fun TalkButton(listening: Boolean, busy: Boolean, inSession: Boolean, talk: () -> Unit) {
+  val color = if (listening || inSession) Color(0xFFE0565B) else Color(0xFF6C5CE7)
   Row(
       Modifier.clip(RoundedCornerShape(50)).background(color).clickable {
-        if (listening) Alfred.endPushToTalk() else if (busy) Alfred.cancel() else talk()
+        when {
+          inSession -> AlfredSession.close()
+          listening -> Alfred.endPushToTalk()
+          busy -> Alfred.cancel()
+          else -> talk()
+        }
       }.padding(horizontal = 30.dp, vertical = 16.dp),
       verticalAlignment = Alignment.CenterVertically) {
-    Text(if (listening) "■  Send" else if (busy) "✕  Stop" else "🎙  Talk to ${Alfred.NAME}",
+    Text(
+        when {
+          inSession -> "✕  End conversation"
+          listening -> "■  Send"
+          busy -> "✕  Stop"
+          else -> "🎙  Talk to ${Alfred.NAME}"
+        },
         color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
   }
   AnimatedVisibility(listening) {
-    Text("Tap to send, or just stop talking", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+    Text("Release to send", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
   }
 }
 

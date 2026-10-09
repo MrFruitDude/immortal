@@ -89,7 +89,7 @@ fun AlfredStage(
     val now = System.nanoTime()
     val t = (now - start) / 1e9f
     val modeT = (now - modeSince) / 1e9f
-    val pose = AlfredAvatar.Pose(mode, t, modeT, liveLevel(mode, t), happiness())
+    val pose = AlfredAvatar.Pose(mode, t, modeT, alfredLiveLevel(mode, t), alfredHappiness())
     avatar.render(pose)
     bitmap.setPixels(avatar.pixels, 0, AlfredAvatar.W, 0, 0, AlfredAvatar.W, AlfredAvatar.H)
 
@@ -116,7 +116,7 @@ fun AlfredStage(
 }
 
 /** Mic level while listening; a word-driven envelope while speaking (TTS gives word starts only). */
-private fun liveLevel(mode: Alfred.Mode, t: Float): Float =
+internal fun alfredLiveLevel(mode: Alfred.Mode, t: Float): Float =
     when (mode) {
       Alfred.Mode.LISTENING -> Alfred.level
       Alfred.Mode.SPEAKING -> {
@@ -127,7 +127,7 @@ private fun liveLevel(mode: Alfred.Mode, t: Float): Float =
     }
 
 /** Rises fast after a pet, then eases out over ~1.6 s. */
-private fun happiness(): Float {
+internal fun alfredHappiness(): Float {
   val since = (System.currentTimeMillis() - Alfred.pettedAt) / 1000f
   return when {
     since < 0.15f -> since / 0.15f

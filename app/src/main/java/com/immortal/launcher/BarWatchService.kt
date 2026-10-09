@@ -31,6 +31,7 @@ class BarWatchService : AccessibilityService() {
     RemoteInput.register(this) // let the phone-remote routes drive input through us
     RemoteCursor.attach(this) // host the remote touchpad's on-TV pointer overlay
     NotificationOverlay.attach(this) // host MQTT-notify toasts (see MqttPublisher.handleNotify)
+    AlfredOverlay.attach(this) // host Alfred's conversation popover and edge glow
     updateBar()
   }
 
@@ -43,6 +44,7 @@ class BarWatchService : AccessibilityService() {
     RemoteInput.unregister()
     RemoteCursor.detach()
     NotificationOverlay.detach()
+    AlfredOverlay.detach()
     return super.onUnbind(intent)
   }
 

@@ -8,15 +8,14 @@
 package com.immortal.launcher
 
 import android.content.Context
-import android.content.Intent
 import android.util.Log
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * Alfred: the character and the conversation on this Portal. One owner for the current voice
- * turn whichever way it started (push-to-talk on the Muse screen, or "Hey Alfred"), the avatar's
- * mode and live level, and a short transcript the UI shows. The UI only observes; the wake-word
- * engine and the screen both drive turns through here.
+ * turn whichever way it started (a hands-free [AlfredSession], or push-to-talk on the full Muse
+ * screen), the avatar's mode and live level, and a short transcript the UI shows. The UI only
+ * observes; the session and the screen both drive turns through here.
  */
 object Alfred {
   private const val TAG = "Alfred"
@@ -31,8 +30,6 @@ object Alfred {
       val mode: Mode = Mode.IDLE,
       val caption: String = "",
       val transcript: List<Line> = emptyList(),
-      /** The turn started from the wake word: the screen closes itself when it's over. */
-      val fromWake: Boolean = false,
       val turnActive: Boolean = false,
   )
 
@@ -55,8 +52,9 @@ object Alfred {
 
   fun removeListener(l: (State) -> Unit) = listeners.remove(l)
 
+  /** Alfred is in a conversation or talking: the wake listener stays out of the way. */
   val busy: Boolean
-    get() = turn != null || MuseSpeech.isSpeaking
+    get() = turn != null || MuseSpeech.isSpeaking || AlfredSession.active
 
   fun pet() {
     pettedAt = System.currentTimeMillis()
@@ -64,7 +62,7 @@ object Alfred {
 
   /** Push-to-talk from the screen. Blocking (opens the mic and a stream): call off main. */
   fun startPushToTalk(context: Context): Boolean {
-    val t = newTurn(context, fromWake = false) ?: return false
+    val t = newTurn(context, null) ?: return false
     if (!t.begin()) {
       clearTurn(t)
       return false
@@ -77,12 +75,12 @@ object Alfred {
   }
 
   /**
-   * The wake word fired: brings the Muse screen forward and returns a turn the wake engine feeds
-   * with the audio it captures (null if Muse isn't connected). Blocking: call off main.
+   * A hands-free turn: returns a turn the caller feeds with the audio it captures, starting with
+   * [preroll] (null if Muse isn't connected). [observer] also hears the turn's states. Blocking
+   * (opens a stream): call off main.
    */
-  fun startFromWake(context: Context, preroll: ByteArray): MuseVoiceTurn? {
-    val t = newTurn(context, fromWake = true) ?: return null
-    showScreen(context, fromWake = true)
+  fun startExternalTurn(context: Context, preroll: ByteArray, observer: MuseVoiceTurn.Listener?): MuseVoiceTurn? {
+    val t = newTurn(context, observer) ?: return null
     if (!t.beginExternal(preroll)) {
       clearTurn(t)
       return null
@@ -102,18 +100,7 @@ object Alfred {
     addLine(Line(true, line))
   }
 
-  fun showScreen(context: Context, fromWake: Boolean) {
-    DreamPolicy.userExitAt = System.currentTimeMillis()
-    ScreenControl.wake(context)
-    runCatching {
-      context.startActivity(
-          Intent(context, MuseActivity::class.java)
-              .putExtra(MuseActivity.EXTRA_FROM_WAKE, fromWake)
-              .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
-    }.onFailure { Log.w(TAG, "couldn't bring the Muse screen forward", it) }
-  }
-
-  private fun newTurn(context: Context, fromWake: Boolean): MuseVoiceTurn? {
+  private fun newTurn(context: Context, observer: MuseVoiceTurn.Listener?): MuseVoiceTurn? {
     val link = MuseRuntime.currentLink()
     if (link == null) {
       update { it.copy(mode = Mode.ERROR, caption = "I can't reach Muse right now") }
@@ -121,9 +108,9 @@ object Alfred {
     }
     synchronized(lock) {
       turn?.cancel()
-      val t = MuseVoiceTurn(context.applicationContext, link, MuseConfig.identity(context).nodeId, Listener())
+      val t = MuseVoiceTurn(context.applicationContext, link, MuseConfig.identity(context).nodeId, Listener(observer))
       turn = t
-      update { it.copy(fromWake = fromWake, turnActive = true) }
+      update { it.copy(turnActive = true) }
       return t
     }
   }
@@ -132,8 +119,13 @@ object Alfred {
     synchronized(lock) { if (turn === t) turn = null }
   }
 
-  private class Listener : MuseVoiceTurn.Listener {
+  private class Listener(private val observer: MuseVoiceTurn.Listener?) : MuseVoiceTurn.Listener {
     override fun onState(state: MuseVoiceTurn.State, message: String) {
+      onOwnState(state, message)
+      observer?.let { o -> runCatching { o.onState(state, message) }.onFailure { Log.w(TAG, "observer failed", it) } }
+    }
+
+    private fun onOwnState(state: MuseVoiceTurn.State, message: String) {
       when (state) {
         MuseVoiceTurn.State.LISTENING -> update { it.copy(mode = Mode.LISTENING, caption = "I'm listening…") }
         MuseVoiceTurn.State.SENDING -> {
@@ -156,6 +148,7 @@ object Alfred {
 
     override fun onReply(text: String) {
       addLine(Line(true, text))
+      observer?.onReply(text)
     }
 
     override fun onLevel(level: Float) {
