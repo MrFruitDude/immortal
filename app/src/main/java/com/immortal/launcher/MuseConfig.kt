@@ -103,11 +103,12 @@ object MuseConfig {
       val allowSmartHome: Boolean = true,
       val haUrl: String = "",
       val haToken: String = "",
+      val musicPlayer: String = "",
   )
 
   fun load(c: Context) =
       Settings(isEnabled(c), speakReplies(c), allowDisplay(c), imageSeconds(c), allowLan(c), heyButton(c), sdkToken(c).orEmpty(),
-          wakeWord(c), wakeOnlyWhenPresent(c), allowApps(c), allowSmartHome(c), haUrl(c), haToken(c))
+          wakeWord(c), wakeOnlyWhenPresent(c), allowApps(c), allowSmartHome(c), haUrl(c), haToken(c), musicPlayer(c))
 
   fun isEnabled(c: Context): Boolean = prefs(c).getBoolean("enabled", false)
 
@@ -173,6 +174,14 @@ object MuseConfig {
   fun haToken(c: Context): String = prefs(c).getString("ha_token", "")?.trim().orEmpty()
 
   fun setHaToken(c: Context, v: String) = prefs(c).edit().putString("ha_token", v.trim()).apply()
+
+  /**
+   * Where music goes when a request doesn't name a room: a Music Assistant player or group name.
+   * Blank = the whole home — the speaker group with the most members ([MuseMusic.defaultPlayer]).
+   */
+  fun musicPlayer(c: Context): String = prefs(c).getString("music_player", "")?.trim().orEmpty()
+
+  fun setMusicPlayer(c: Context, v: String) = prefs(c).edit().putString("music_player", v.trim()).apply()
 
   /** Hue bridge address and application key, set by hue.pair (protocol state, not a setting). */
   fun hueBridge(c: Context): String = prefs(c).getString("hue_bridge", "").orEmpty()

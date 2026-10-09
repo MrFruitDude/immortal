@@ -1503,6 +1503,14 @@ object SettingsDomains {
                       secret = true,
                       help = "A long-lived access token (your HA profile › Security).",
                       visible = { _, s -> s.allowSmartHome }),
+                  StringSpec(
+                      "musicPlayer",
+                      "Default speakers",
+                      get = { it.musicPlayer },
+                      set = MuseConfig::setMusicPlayer,
+                      help =
+                          "Where music plays when you don't name a room: a Music Assistant player or " +
+                              "group. Blank plays on the whole home (the biggest speaker group)."),
               ),
           sections =
               mapOf(
@@ -1516,7 +1524,8 @@ object SettingsDomains {
                   "heyButton" to "Voice",
                   "allowDisplay" to "What Muse may do",
                   "imageSeconds" to "What Muse may do",
-                  "allowLan" to "What Muse may do"),
+                  "allowLan" to "What Muse may do",
+                  "musicPlayer" to "Music"),
           // The command list is sent at registration, so a permission change re-registers.
           onApplied = { c, _ ->
             MuseService.sync(c)

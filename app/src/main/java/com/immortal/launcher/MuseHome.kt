@@ -327,7 +327,7 @@ object MuseMusic {
    * (default), replace, next or add. `radio` keeps similar music going after it.
    */
   fun play(c: Context, p: JSONObject): JSONObject {
-    val player = resolvePlayer(c, p.getString("player"))
+    val player = targetPlayer(c, p)
     val uri = p.optString("uri").ifEmpty {
       val query = p.optString("query").ifEmpty { throw IllegalArgumentException("give a uri or a query") }
       val type = p.optString("type").ifEmpty { null }
@@ -344,7 +344,7 @@ object MuseMusic {
 
   /** play / pause / stop / next / previous, and/or volume 0–100, on a player. */
   fun control(c: Context, p: JSONObject): JSONObject {
-    val (id, name) = resolvePlayer(c, p.getString("player"))
+    val (id, name) = targetPlayer(c, p)
     p.optString("action").takeIf { it.isNotEmpty() }?.let { a ->
       val cmd = when (a) {
         "play", "pause", "stop", "next", "previous" -> a
@@ -356,6 +356,25 @@ object MuseMusic {
     if (p.has("volume")) call(c, "players/cmd/volume_set", JSONObject().put("player_id", id).put("volume_level", p.getInt("volume").coerceIn(0, 100)))
     return JSONObject().put("player", name)
   }
+
+  /** The named `player`, else the configured default, else the whole home. */
+  private fun targetPlayer(c: Context, p: JSONObject): Pair<String, String> {
+    val named = p.optString("player").ifBlank { MuseConfig.musicPlayer(c) }
+    if (named.isNotBlank()) return resolvePlayer(c, named)
+    val arr = players(c).getJSONArray("players")
+    return defaultPlayer((0 until arr.length()).map { arr.getJSONObject(it) })
+        ?: throw IllegalArgumentException("no speaker group in Music Assistant — name a player (try music.players)")
+  }
+
+  /**
+   * "The whole home": the speaker group with the most members (a Google Home group such as
+   * "Group", or a Music Assistant sync group). Null when there isn't one. Pure, for tests.
+   */
+  internal fun defaultPlayer(players: List<JSONObject>): Pair<String, String>? =
+      players
+          .filter { (it.optJSONArray("group_members")?.length() ?: 0) > 1 || it.optString("type") == "group" }
+          .maxByOrNull { it.optJSONArray("group_members")?.length() ?: 0 }
+          ?.let { it.getString("id") to it.getString("name") }
 
   /** (player_id, display name) for a name or id; fuzzy on names. */
   private fun resolvePlayer(c: Context, key: String): Pair<String, String> {

@@ -188,13 +188,15 @@ class MuseCommands(private val context: Context) {
               "types" to p("array", "Any of track, album, artist, playlist, radio. Default: all."),
               "limit" to p("integer", "Per type, default 5.")),
           timeoutMs = 30_000))
+      val home = MuseConfig.musicPlayer(context).ifBlank { "the whole-home speaker group" }
       c.put("music.play", spec(
-          "Play music on any room through Music Assistant: a `uri` from music.search, or the best match for " +
+          "Play music through Music Assistant: a `uri` from music.search, or the best match for " +
               "`query` (a song, album, artist, playlist like 'Discover Weekly', or a genre). Plays on " +
               "`player` (name or id from music.players: a Google Home, a speaker group, a Portal or a sync " +
-              "group, all in sync).",
-          required = mapOf("player" to p("string", "Player or group name/id.")),
+              "group, all in sync). Leave `player` out unless the user names a room or speaker — it then " +
+              "plays everywhere, on $home.",
           optional = mapOf(
+              "player" to p("string", "Player or group name/id. Omit for the whole home."),
               "uri" to p("string", "Media URI from music.search."),
               "query" to p("string", "Or what to search and play."),
               "type" to p("string", "Prefer this type for query: track, album, artist, playlist, radio."),
@@ -202,9 +204,11 @@ class MuseCommands(private val context: Context) {
               "radio" to p("boolean", "Keep similar music playing afterwards.")),
           timeoutMs = 45_000))
       c.put("music.control", spec(
-          "Control a Music Assistant player: play, pause, play_pause, stop, next, previous, and/or volume 0-100.",
-          required = mapOf("player" to p("string", "Player or group name/id.")),
-          optional = mapOf("action" to p("string", "play, pause, play_pause, stop, next, previous."),
+          "Control a Music Assistant player: play, pause, play_pause, stop, next, previous, and/or volume 0-100. " +
+              "Without `player` it controls $home.",
+          optional = mapOf(
+              "player" to p("string", "Player or group name/id. Omit for the whole home."),
+              "action" to p("string", "play, pause, play_pause, stop, next, previous."),
               "volume" to p("integer", "0-100.")),
           timeoutMs = 20_000))
     }
