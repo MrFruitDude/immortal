@@ -80,6 +80,12 @@ class MuseCommands(private val context: Context) {
         required = mapOf("text" to p("string", "What to say.")),
         optional = mapOf("language" to p("string", "BCP-47 language tag, e.g. en-US. Default: the Portal's.")),
         timeoutMs = 120_000))
+    c.put("conversation.end", spec(
+        "End the current hands-free voice conversation with Alfred on this Portal. After each reply " +
+            "the Portal keeps listening for a few seconds for a follow-up; call this instead when the " +
+            "user is done: they say thanks, goodbye, that's all or never mind, or their request is " +
+            "complete and needs no follow-up. Put any goodbye in your reply text; the conversation " +
+            "ends once that reply has been spoken. Safe to call when no conversation is running."))
     c.put("audio.play_url", spec(
         "Play an audio stream or file (MP3, AAC, OGG, WAV, internet radio) on this Portal's speaker. " +
             "Replies once playback has started.",
@@ -282,6 +288,7 @@ class MuseCommands(private val context: Context) {
           }
           "voice.configure" -> volume(params)
           "speaker.say" -> say(params)
+          "conversation.end" -> ok(JSONObject().put("ended", AlfredSession.requestEnd()))
           "audio.play_url" -> playUrl(params)
           "audio.stop" -> {
             MuseAudio.stop()

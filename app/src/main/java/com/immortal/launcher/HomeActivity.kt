@@ -1923,7 +1923,20 @@ private fun heyPackage(context: android.content.Context): String? =
 internal fun museHeyEnabled(context: android.content.Context): Boolean =
     MuseConfig.isEnabled(context) && MuseConfig.isPaired(context) && MuseConfig.heyButton(context)
 
+/**
+ * The Alfred / hey button. [talk]: start (or, tapped again, end) a hands-free conversation in
+ * Alfred's popover over the current screen; if that can't start (Muse not connected, no
+ * microphone permission) the full Muse screen opens instead and says why. Otherwise (long-press,
+ * Tools, Settings) the full Muse screen.
+ */
 internal fun openMuse(context: android.content.Context, talk: Boolean) {
+  if (talk) {
+    if (AlfredSession.active) {
+      AlfredSession.close()
+      return
+    }
+    if (AlfredSession.start(context)) return
+  }
   context.startActivity(Intent(context, MuseActivity::class.java).putExtra(MuseActivity.EXTRA_TALK, talk))
 }
 

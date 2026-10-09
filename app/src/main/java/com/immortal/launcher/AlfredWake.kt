@@ -32,8 +32,9 @@ import org.vosk.Recognizer
  * Privacy is the design constraint, not an afterthought:
  *  - Keyword spotting runs locally (Kaldi via Vosk) on a ring of in-memory audio. Nothing is
  *    written to disk and nothing leaves the device while it waits.
- *  - Only after "Hey Alfred" does one voice note go to Muse: from just before the wake word to
- *    when you stop talking (silence), at most 15 s. Then it goes back to waiting locally.
+ *  - "Hey Alfred" starts a hands-free conversation ([AlfredSession]): only once you start
+ *    talking after it does a voice note go to Muse, from just before you spoke until you stop
+ *    (at most 15 s per turn). Follow-ups work the same way; then it goes back to waiting locally.
  *  - It listens only while Muse is connected, can be limited to when someone is in the room,
  *    pauses while Alfred is talking (so it can't wake itself), and hands the microphone to the
  *    intercom, the camera or a voice note the moment they want it.
@@ -44,9 +45,8 @@ object AlfredWake {
   private const val RATE = 16_000
   private const val CHUNK = RATE / 10 * 2 // 100 ms of 16-bit mono
   private const val PREROLL_CHUNKS = 12 // 1.2 s kept from before the wake word
-  private const val END_SILENCE_MS = 1_200L
-  private const val NO_SPEECH_MS = 4_000L
-  private const val MAX_COMMAND_MS = 15_000L
+  /** ~2 s of HAL buffer: a conversation opens a stream on this thread mid-capture. */
+  private const val RECORD_BUFFER = RATE * 2 * 2
   private const val MODEL_NAME = "vosk-model-small-en-us-0.15"
   const val MODEL_URL = "https://alphacephei.com/vosk/models/$MODEL_NAME.zip"
   /** Pinned: a tampered or truncated download is rejected. */
@@ -70,7 +70,10 @@ object AlfredWake {
     while (micOpen && System.currentTimeMillis() < until) Thread.sleep(20)
   }
   @Volatile private var running = false
-  private var model: Model? = null
+  @Volatile private var model: Model? = null
+
+  /** The on-device model if the wake listener already loaded it (never loads or downloads it). */
+  internal fun modelIfLoaded(): Model? = model
 
   fun start(context: Context) {
     synchronized(this) {
@@ -143,7 +146,7 @@ object AlfredWake {
     if (!MicOwner.acquire(OWNER, MicOwner.PRIORITY_WAKE)) return
     val minBuf = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
     val rec = runCatching {
-      AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuf, CHUNK * 4))
+      AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuf, RECORD_BUFFER))
     }.getOrNull()
     if (rec == null || rec.state != AudioRecord.STATE_INITIALIZED) {
       rec?.release()
@@ -178,7 +181,7 @@ object AlfredWake {
         val chunk = buf.copyOf(n)
         ring.addLast(chunk)
         while (ring.size > PREROLL_CHUNKS) ring.removeFirst()
-        val rms = rms(chunk)
+        val rms = AlfredEndpointer.rms(chunk)
         floor = if (rms < floor) floor * 0.9 + rms * 0.1 else floor * 0.995 + rms * 0.005
         val loud = rms > maxOf(floor * 2.2, 350.0)
         if (!active) {
@@ -216,7 +219,9 @@ object AlfredWake {
   private fun onWake(c: Context, rec: AudioRecord, ring: ArrayDeque<ByteArray>, floor: Double, recognizer: Recognizer) {
     Log.w(TAG, "wake word heard") // warn level: survives logcat rate-limiting
     recognizer.reset()
-    capture(c, rec, ring, maxOf(floor, 150.0))
+    // The conversation runs right here on the open microphone, so nothing is lost between
+    // "Hey Alfred" and the request; it returns when the conversation is over.
+    AlfredSession.runFromWake(c, rec, OWNER, ring.toList(), maxOf(floor, 150.0))
     ring.clear()
     recognizer.reset()
     set(Status.LISTENING, "Listening for “Hey ${Alfred.NAME}” on this Portal")
@@ -230,48 +235,7 @@ object AlfredWake {
     return isWakePhrase(text)
   }
 
-  /**
-   * After the wake word: stream this utterance to Muse. The same AudioRecord keeps running so
-   * nothing is lost between "Hey Alfred" and the request; it ends on silence.
-   */
-  private fun capture(c: Context, rec: AudioRecord, preroll: ArrayDeque<ByteArray>, floor: Double) {
-    chime(rising = true)
-    val pre = java.io.ByteArrayOutputStream().apply { preroll.forEach { write(it) } }.toByteArray()
-    val turn = Alfred.startFromWake(c, pre) ?: return
-    val buf = ByteArray(CHUNK)
-    val started = System.currentTimeMillis()
-    var lastSpeech = 0L
-    val threshold = maxOf(floor * 2.8, 450.0)
-    var dead = 0
-    try {
-      while (running) {
-        val n = readFully(rec, buf)
-        val now = System.currentTimeMillis()
-        if (n <= 0) {
-          // The microphone stopped delivering (another app took it, or the HAL died). Send what
-          // we have rather than wait forever; listen() reopens the mic afterwards.
-          if (++dead >= 20 || now - started > MAX_COMMAND_MS) break
-          Thread.sleep(50)
-          continue
-        }
-        dead = 0
-        if (!turn.feed(buf, 0, n)) return // the turn failed (Muse unreachable): it reported why
-        if (rms(buf, n) > threshold) lastSpeech = now
-        val done =
-            (lastSpeech > 0 && now - lastSpeech > END_SILENCE_MS) ||
-                (lastSpeech == 0L && now - started > NO_SPEECH_MS) ||
-                now - started > MAX_COMMAND_MS
-        if (done) break
-      }
-      turn.finishExternal()
-      chime(rising = false)
-    } catch (e: Exception) {
-      turn.cancel()
-      throw e
-    }
-  }
-
-  private fun readFully(rec: AudioRecord, buf: ByteArray): Int {
+  internal fun readFully(rec: AudioRecord, buf: ByteArray): Int {
     var got = 0
     while (got < buf.size) {
       val n = rec.read(buf, got, buf.size - got)
@@ -283,19 +247,8 @@ object AlfredWake {
 
   internal fun isWakePhrase(text: String): Boolean = Regex("\\bhey alfred\\b").containsMatchIn(text.lowercase())
 
-  private fun rms(b: ByteArray, len: Int = b.size): Double {
-    var sum = 0.0
-    var i = 0
-    while (i + 1 < len) {
-      val v = (b[i].toInt() and 0xff) or (b[i + 1].toInt() shl 8)
-      sum += v.toDouble() * v
-      i += 2
-    }
-    return Math.sqrt(sum / maxOf(1, len / 2))
-  }
-
   /** A soft two-note cue: rising when Alfred starts listening, falling when it stops. */
-  private fun chime(rising: Boolean) {
+  internal fun chime(rising: Boolean) {
     runCatching {
       val rate = 22_050
       val notes = if (rising) doubleArrayOf(880.0, 1318.5) else doubleArrayOf(1318.5, 880.0)

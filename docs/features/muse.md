@@ -3,7 +3,7 @@
 Immortal can turn a Portal into a **Muse gadget**: the Muse app pairs it like any device built
 with Meta's open-source [Muse Gadget SDK](https://gadgets.muse.ai). Muse can then show things on
 the Portal's screen, speak and play audio on it, read the room, and reach your other home
-devices through it. You can also talk to Muse from the Portal with push-to-talk.
+devices through it. You can also talk to Muse from the Portal, hands-free, through Alfred.
 
 The screensaver keeps working. Muse runs as a quiet background service. A picture or note it
 sends takes over the screen for a while (or until you tap it), then the photo frame comes back.
@@ -35,7 +35,48 @@ happening:
 - **Off:** he waves goodbye.
 - **Happy:** tap him to pet him and he hops.
 
-Hold him (or the talk button) to speak to Muse.
+### Talking to Alfred
+
+Say **"Hey Alfred"**, or tap the **Alfred** button on the home screen, and he pops up over
+whatever is on screen: the home screen, another app or the photo frame. He doesn't take over
+the screen. A small card near the bottom shows him, what he's doing (*Listening*, *Thinking*,
+then his reply as he speaks it), and a close button. The screen edges glow softly in his colour
+for as long as the conversation lasts. The glow doesn't catch touches, and neither does anything
+outside the card, so the app underneath keeps working.
+
+There's no button to hold. It's a conversation:
+
+1. **You talk.** Alfred notices when you start (you don't need to start right after the wake
+   word; he waits about 6 seconds) and when you've finished: about 0.8 seconds of silence ends
+   your turn (**Settings › Muse › End of turn**). A cough or a door doesn't count, and a turn is
+   at most 15 seconds.
+2. **He thinks and answers.** Your words go to Muse as a voice note and he speaks the reply.
+   While he's thinking and talking the microphone is ignored, so he can't hear himself.
+3. **You can answer back.** After he finishes, he keeps listening for about 8 seconds
+   (**Follow-up window**) without needing "Hey Alfred" again. If you talk, that's the next turn.
+   If you don't, the conversation ends quietly.
+
+The conversation ends when:
+
+- you stay quiet after his reply;
+- Alfred decides you're done. Muse can call `conversation.end`, for example after you say
+  thanks or your request is complete, and he finishes his sentence first;
+- you say **"thanks Alfred"**, **"that's all"**, **"stop"**, **"goodbye"** or **"never mind"**
+  on its own. This is recognised on the device, so that phrase never reaches Muse. It needs
+  the "Hey Alfred" voice model, so it only works when the wake word is on;
+- you tap the card's **✕**, or the Alfred button again;
+- the intercom or another higher-priority app takes the microphone;
+- it reaches 3 minutes. A reply in progress still finishes.
+
+Turn off **Follow-up listening** for one question and answer per "Hey Alfred".
+
+The popover is drawn by Immortal's accessibility service, the same one behind the quick
+buttons, so it needs no extra permission. If that service isn't running, a smaller version
+appears in a floating window at the bottom of the screen, with no edge glow.
+
+**Tools › Muse** (or a long-press on the Alfred button) still opens Alfred's full screen, with
+the conversation so far and the connection and pairing status. There you can also hold him to
+talk.
 
 ### "Hey Alfred"
 
@@ -45,14 +86,17 @@ around privacy:
 - **On the device.** Wake-word spotting runs locally (Kaldi via Vosk). Audio stays in memory,
   is never written to disk, and nothing leaves the Portal while it waits. The recogniser only
   runs while there's sound in the room.
-- **Only what you say to it.** After "Hey Alfred" (a chime plays), one voice note goes to Muse:
-  from just before the wake word until you stop talking, at most 15 seconds. Then it goes back
-  to listening locally.
+- **Only what you say to it.** After "Hey Alfred" (a chime plays), nothing is sent until you
+  actually start talking. Then a voice note goes to Muse, starting about half a second before
+  you spoke and ending when you stop, at most 15 seconds. Follow-up turns work the same way:
+  while the follow-up window waits, nothing leaves the Portal.
 - **Only when it makes sense.** It listens only while Muse is connected and, by default, only
-  while someone is in the room (Meta's presence sensing). It pauses while Alfred talks, so it
-  can't wake itself, and hands the microphone to the intercom, the camera or a voice note
-  whenever they want it.
-- **Visible.** The Muse screen shows when it's listening.
+  while someone is in the room (Meta's presence sensing); a follow-up window also closes if the
+  room empties. It ignores the microphone while Alfred talks, so it can't wake itself, and hands
+  the microphone to the intercom, the camera or a voice note whenever they want it (during a
+  conversation, only the intercom can take it).
+- **Visible.** The glowing edges show whenever Alfred is listening to you, and the Muse screen
+  shows when the wake word is on.
 
 The first time it's turned on, it downloads a 41 MB speech model. The download is
 checksum-verified.
@@ -64,6 +108,7 @@ checksum-verified.
 | `canvas.show` / `canvas.update` / `canvas.snapshot` / `canvas.close` | **The Portal as Muse's canvas:** full-screen HTML/CSS/JS/SVG (dashboards, briefings, animations, games, interactive pages). See below. |
 | `display.draw_url`, `display.show_text`, `display.show_animation` | Show a picture or large text, or clear the screen |
 | `speaker.say` | Speak text with the Portal's voice |
+| `conversation.end` | End the hands-free conversation once Alfred's reply has been spoken |
 | `audio.play_url` / `audio.stop` | Play a stream or file on the Portal |
 | `music.radio` | Find a station by name or genre (radio-browser.info) and play it here or on a Google Home / Cast group |
 | `voice.configure` | Read or set the volume |

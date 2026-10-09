@@ -310,6 +310,16 @@
             android:theme="@style/Theme.SampleApp" />
         <!-- What Muse puts on the screen (display.draw_url / show_text). Its own task so it can
              come forward from the background over the photo frame and leave it intact. -->
+        <!-- Alfred's popover when the accessibility overlay isn't available (AlfredOverlay):
+             a small translucent window in its own task, so it floats over whatever app is in
+             front instead of pulling the launcher task forward. -->
+        <activity
+            android:name=".AlfredPopoverActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="com.immortal.launcher.alfred"
+            android:theme="@style/Theme.AlfredPopover" />
         <activity
             android:name=".MuseSettingsActivity"
             android:exported="false"
