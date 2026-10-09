@@ -62,7 +62,7 @@ class FleetRoutes(private val context: Context) {
       "/install" -> requireMethod("POST", req) { install(req) }
       "/update" -> requireMethod("POST", req) { update(req) }
       "/dev" -> dev(req)
-      "/dev/screenshot" -> requireMethod("GET", req) { screenshot() }
+      "/dev/screenshot" -> requireMethod("GET", req) { screenshot(req.queryParam("layer") == "glass") }
       "/config" -> requireMethod("POST", req) { config(req) }
       "/calendar" -> calendar(req)
       "/screensaver" -> screensaver(req)
@@ -240,8 +240,8 @@ class FleetRoutes(private val context: Context) {
       }
 
   /** The home screen as Immortal draws it ([HomeActivity.captureForeground]); 409 when not in front. */
-  private fun screenshot(): FleetHttpServer.Response {
-    val png = HomeActivity.captureForeground() ?: return resp(409, err("home_not_in_front"))
+  private fun screenshot(glassOnly: Boolean = false): FleetHttpServer.Response {
+    val png = HomeActivity.captureForeground(glassOnly = glassOnly) ?: return resp(409, err("home_not_in_front"))
     return FleetHttpServer.Response.stream(200, "image/png", png.size.toLong()) { it.write(png) }
   }
 

@@ -257,7 +257,7 @@ class HomeActivity : ComponentActivity() {
      * system UI), or null when Home isn't in front. Backs the fleet `/dev/screenshot` route so a
      * layout can be checked on a real Portal without USB.
      */
-    fun captureForeground(timeoutMs: Long = 3000): ByteArray? {
+    fun captureForeground(timeoutMs: Long = 3000, glassOnly: Boolean = false): ByteArray? {
       val act = foreground?.get() ?: return null
       val latch = java.util.concurrent.CountDownLatch(1)
       var png: ByteArray? = null
@@ -267,7 +267,8 @@ class HomeActivity : ComponentActivity() {
           val bmp = android.graphics.Bitmap.createBitmap(v.width, v.height, android.graphics.Bitmap.Config.ARGB_8888)
           // Not plain v.draw(): a software canvas can't see the liquid-glass GL stage, so its last
           // frame is composited underneath the UI (identical to v.draw() when there's no stage).
-          GlassStage.drawWindow(v, android.graphics.Canvas(bmp))
+          if (glassOnly) GlassStage.drawStagesOnly(v, android.graphics.Canvas(bmp))
+          else GlassStage.drawWindow(v, android.graphics.Canvas(bmp))
           png =
               java.io.ByteArrayOutputStream().use {
                 bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)

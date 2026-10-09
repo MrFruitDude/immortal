@@ -248,13 +248,34 @@ internal object GlassStage {
       canvas.drawBitmap(bmp, null, Rect(loc[0], loc[1], loc[0] + tv.width, loc[1] + tv.height), paint)
       bmp.recycle()
     }
-    for (i in 0 until decor.childCount) {
-      val child = decor.getChildAt(i)
-      if (child.visibility != View.VISIBLE) continue
-      val save = canvas.save()
-      canvas.translate(child.left.toFloat() - decor.scrollX, child.top.toFloat() - decor.scrollY)
-      child.draw(canvas)
-      canvas.restoreToCount(save)
+    // A TextureView can't draw into a software canvas and paints a blank (white) layer instead, which
+    // would cover the sky we just drew — so hide the stages while the rest of the window draws.
+    val alphas = stages.map { it.alpha }
+    stages.forEach { it.alpha = 0f }
+    try {
+      for (i in 0 until decor.childCount) {
+        val child = decor.getChildAt(i)
+        if (child.visibility != View.VISIBLE) continue
+        val save = canvas.save()
+        canvas.translate(child.left.toFloat() - decor.scrollX, child.top.toFloat() - decor.scrollY)
+        child.draw(canvas)
+        canvas.restoreToCount(save)
+      }
+    } finally {
+      stages.forEachIndexed { i, tv -> tv.alpha = alphas[i] }
+    }
+  }
+
+  /** Only the GL stages' last frames (`/dev/screenshot?layer=glass`), for debugging the capture. */
+  fun drawStagesOnly(decor: View, canvas: Canvas) {
+    val stages = ArrayList<GlassTextureView>()
+    collect(decor, stages)
+    val loc = IntArray(2)
+    stages.forEach { tv ->
+      val bmp = runCatching { tv.bitmap }.getOrNull() ?: return@forEach
+      tv.getLocationInWindow(loc)
+      canvas.drawBitmap(bmp, null, Rect(loc[0], loc[1], loc[0] + tv.width, loc[1] + tv.height), Paint(Paint.FILTER_BITMAP_FLAG))
+      bmp.recycle()
     }
   }
 
