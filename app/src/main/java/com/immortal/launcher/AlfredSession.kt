@@ -13,6 +13,7 @@ import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.os.PowerManager
 import android.util.Log
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.CopyOnWriteArrayList
@@ -163,7 +164,9 @@ object AlfredSession {
       phase = m.phase
     }
     Log.i(TAG, "conversation started")
-    ScreenControl.wake(c)
+    // Only light a screen that's off: a wake-up while the photo frame dreams would end the dream,
+    // and the popover is meant to float over it (isInteractive is true while dreaming).
+    if (c.getSystemService(PowerManager::class.java)?.isInteractive == false) ScreenControl.wake(c)
     val onAlfred: (Alfred.State) -> Unit = { publish(m) }
     Alfred.addListener(onAlfred)
     AlfredOverlay.show(c, model(m.phase, false, Alfred.state))
