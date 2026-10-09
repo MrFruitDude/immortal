@@ -143,9 +143,10 @@ internal fun DashboardScreen(
   }
 
   Box(Modifier.fillMaxSize()) {
-    // The live weather sky, unless the user picked a photo or a fixed gradient as their wallpaper.
+    // The live weather sky, unless the user picked a photo as their wallpaper (gradients and the
+    // plain sky are the app grid's; the dashboard is where the weather lives).
     val wallpaper = remember { WallpaperConfig.load(context).mode }
-    if (wallpaper in setOf(WallpaperConfig.DARK, WallpaperConfig.SKY, WallpaperConfig.WEATHER)) {
+    if (!WallpaperConfig.isPhoto(wallpaper)) {
       WeatherSky(Modifier.fillMaxSize())
       Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x33000000), Color(0x59000000)))))
     } else {
