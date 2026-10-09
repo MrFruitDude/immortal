@@ -87,6 +87,11 @@ object EnergyData {
   var last: Snapshot? = null
     private set
 
+  /** When [last] was read (epoch millis), so a re-created card doesn't re-read at once. */
+  @Volatile
+  var lastAt: Long = 0L
+    private set
+
   /** Reads both sources; keeps the previous value of a source whose read failed. */
   fun load(c: Context): Snapshot {
     val prev = last
@@ -100,7 +105,10 @@ object EnergyData {
     val grid =
         runCatching { loadGrid(System.currentTimeMillis()) }.onFailure { Log.w(TAG, "grid: ${it.message}") }.getOrNull()
             ?: prev?.grid
-    return Snapshot(ha, home, grid).also { last = it }
+    return Snapshot(ha, home, grid).also {
+      last = it
+      lastAt = System.currentTimeMillis()
+    }
   }
 
   // --- home (Home Assistant) ----------------------------------------------------
