@@ -592,17 +592,30 @@ private fun SceneChips(snap: HomeControls.Snapshot, onChanged: () -> Unit) {
 
 @Composable
 private fun SetupCard(loading: Boolean, modifier: Modifier) {
+  val context = LocalContext.current
   DashCard("Home", modifier) {
     if (loading) {
       Text("Loading…", color = Muted, fontSize = 14.sp)
       return@DashCard
     }
     Text(
-        "Connect Home Assistant (Settings › Muse › Smart home) to control your thermostats and " +
-            "lights here — including Hilo, through Home Assistant's Hilo integration. A paired Hue " +
-            "bridge works too.",
+        "Connect Home Assistant and Hue to control your thermostats (including Hilo), lights and " +
+            "scenes from here.",
         color = Muted,
         fontSize = 14.sp)
+    Spacer(Modifier.height(14.dp))
+    Text(
+        "Connect",
+        color = Color.White,
+        fontSize = 16.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier =
+            Modifier.clip(RoundedCornerShape(50))
+                .background(Accent)
+                .tvFocusable(RoundedCornerShape(50)) {
+                  runCatching { context.startActivity(SmartHomeConnectActivity.intent(context)) }
+                }
+                .padding(horizontal = 22.dp, vertical = 12.dp))
   }
 }
 
