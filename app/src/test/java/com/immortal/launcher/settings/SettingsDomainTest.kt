@@ -418,7 +418,7 @@ class SettingsDomainTest {
     // Guards the strict coercers: the Immortal display enums write the raw string straight to prefs
     // (no normalising setter), so without a coercer a remote push of an unrecognised value would
     // persist garbage into a constrained field. Each must accept its options and skip anything else.
-    listOf("weatherUnit", "tileSize", "weatherWidget", "clockFormat", "homeMode").forEach { key ->
+    listOf("weatherUnit", "tileSize", "weatherWidget", "clockFormat", "homeMode", "dashboardStyle").forEach { key ->
       val spec = SettingsDomains.immortal.specs.first { it.key == key } as EnumSpec<*>
       spec.options.forEach { (value, _) ->
         assertEquals("enum '$key' must accept its own option '$value'", value, spec.coerce(value))

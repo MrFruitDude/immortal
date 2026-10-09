@@ -89,3 +89,4 @@ nav:
   - Design notes:
       - Multi-room audio: design/multi-room-audio.md
       - Camera streaming: design/camera-streaming.md
+      - Liquid glass dashboard: design/liquid-glass.md

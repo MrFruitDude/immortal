@@ -34,6 +34,7 @@ import com.immortal.launcher.ScreensaverDismissAppActivity
 import com.immortal.launcher.ScreensaverSourcesActivity
 import com.immortal.launcher.BrightnessSchedule
 import com.immortal.launcher.ImmortalSettings
+import com.immortal.launcher.GlassStage
 import com.immortal.launcher.SystemSounds
 import com.immortal.launcher.MqttConfig
 import com.immortal.launcher.MqttService
@@ -617,6 +618,30 @@ object SettingsDomains {
                       help =
                           "Dashboard shows the time, weather, music, lights and thermostats, with your " +
                               "apps one tap away."),
+                  EnumSpec(
+                      "dashboardStyle",
+                      "Dashboard style",
+                      get = { it.dashboardStyle },
+                      set = ImmortalSettings::setDashboardStyle,
+                      options =
+                          listOf(
+                              ImmortalSettings.DASH_CLASSIC to "Classic",
+                              ImmortalSettings.DASH_GLASS to "Liquid glass"),
+                      coerce = oneOf(ImmortalSettings.DASH_CLASSIC, ImmortalSettings.DASH_GLASS),
+                      help =
+                          "Liquid glass draws an animated sky behind frosted-glass cards. It moves for a " +
+                              "few seconds after you touch the screen, then rests. Not used with a photo " +
+                              "wallpaper; falls back to Classic by itself if the graphics driver can't run it.",
+                      visible = { _, s -> s.homeMode == ImmortalSettings.HOME_DASHBOARD }),
+                  BoolSpec(
+                      "glassFrameLog",
+                      "Log glass frame times",
+                      get = { it.glassFrameLog },
+                      set = ImmortalSettings::setGlassFrameLog,
+                      help = "For testing: logs the average frame time every 10 seconds (logcat tag ImmortalGlass).",
+                      visible = { _, s ->
+                        s.homeMode == ImmortalSettings.HOME_DASHBOARD && s.dashboardStyle == ImmortalSettings.DASH_GLASS
+                      }),
                   BoolSpec(
                       "brightnessSchedule",
                       "Daylight brightness",
@@ -737,6 +762,8 @@ object SettingsDomains {
                   "weatherUnit" to "Weather",
                   "weatherWidget" to "Weather",
                   "homeMode" to "Home screen",
+                  "dashboardStyle" to "Home screen",
+                  "glassFrameLog" to "Home screen",
                   "tileSize" to "Home screen",
                   "brightnessSchedule" to "Display",
                   "brightnessDay" to "Display",
@@ -758,6 +785,8 @@ object SettingsDomains {
           onApplied = { c, keys ->
             if ("hideStatusBar" in keys) SettingsGuard.applyStatusBar(c)
             if ("portalPresence" in keys) PortalPresenceDetector.sync(c)
+            // Re-picking a style gives liquid glass another try after a recorded GL failure.
+            if ("dashboardStyle" in keys) runCatching { GlassStage.resetGuard(c) }
             if (keys.any { it.startsWith("brightness") }) {
               BrightnessSchedule.reschedule(c)
               // Turning it on without the "Modify system settings" grant: open the grant screen.
