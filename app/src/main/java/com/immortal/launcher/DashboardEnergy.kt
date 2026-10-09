@@ -95,10 +95,11 @@ internal fun DashboardEnergyCard(modifier: Modifier = Modifier) {
     lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
       // The card moves between rows when music starts or stops; don't re-read on every move.
       val age = System.currentTimeMillis() - EnergyData.lastAt
-      if (snap != null && age in 0 until ENERGY_POLL_MS) delay(ENERGY_POLL_MS - age)
+      if (snap?.grid != null && age in 0 until ENERGY_POLL_MS) delay(ENERGY_POLL_MS - age)
       while (true) {
         snap = withContext(Dispatchers.IO) { runCatching { EnergyData.load(context) }.getOrNull() } ?: snap
-        delay(ENERGY_POLL_MS)
+        // Right after boot the network may not be up yet: retry in a minute until the grid answers.
+        delay(if (snap?.grid == null) 60_000L else ENERGY_POLL_MS)
       }
     }
   }
@@ -144,11 +145,13 @@ internal fun DashboardEnergyCard(modifier: Modifier = Modifier) {
             return@Column
           }
           if (home != null && grid != null && wide) {
-            // Side by side: each half is ~90dp tall at most.
+            // Side by side: each half needs ~90dp; with room to spare (a full-width card ~260dp
+            // tall) the sparklines move under the numbers and take the extra height.
+            val tall = avail >= 150.dp
             Row(Modifier.fillMaxWidth().weight(1f)) {
-              HomeSection(home, locale, showRooms = avail >= 80.dp, Modifier.weight(1f))
+              HomeSection(home, locale, showRooms = avail >= 80.dp, Modifier.weight(1f).fillMaxHeight(), tall)
               Spacer(Modifier.padding(horizontal = 16.dp).width(1.dp).fillMaxHeight().background(EFaint))
-              GridSection(grid, now, tz, locale, use24h, showLegend = avail >= 96.dp, Modifier.weight(1f))
+              GridSection(grid, now, tz, locale, use24h, showLegend = avail >= 96.dp, Modifier.weight(1f).fillMaxHeight(), tall)
             }
           } else if (home != null && grid != null) {
             // Stacked: home ~44dp + 33 for the rooms, rule 25, grid ~70 + 22 for the legend. Rooms
