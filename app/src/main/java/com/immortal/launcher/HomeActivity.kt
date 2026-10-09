@@ -199,6 +199,14 @@ class HomeActivity : ComponentActivity() {
     }
     setContent {
       SampleAppTheme(darkTheme = true) {
+        HomeRoot(
+            homePresses = homePresses,
+            onCalls = { launchStockHome() },
+            onOpenStore = { runCatching { startActivity(Intent(this, StoreActivity::class.java)) } },
+            onStartScreensaver = {
+              runCatching { startActivity(Intent(this, PhotoFramePreviewActivity::class.java)) }
+            },
+        ) {
         LauncherScreen(
             onLaunch = { cn ->
               runCatching {
@@ -231,8 +239,48 @@ class HomeActivity : ComponentActivity() {
               }
             },
         )
+        }
       }
     }
+  }
+
+  companion object {
+    @Volatile private var foreground: java.lang.ref.WeakReference<HomeActivity>? = null
+
+    /**
+     * PNG of the home screen as Immortal draws it (only its own window — never other apps or the
+     * system UI), or null when Home isn't in front. Backs the fleet `/dev/screenshot` route so a
+     * layout can be checked on a real Portal without USB.
+     */
+    fun captureForeground(timeoutMs: Long = 3000): ByteArray? {
+      val act = foreground?.get() ?: return null
+      val latch = java.util.concurrent.CountDownLatch(1)
+      var png: ByteArray? = null
+      act.runOnUiThread {
+        runCatching {
+          val v = act.window.decorView
+          val bmp = android.graphics.Bitmap.createBitmap(v.width, v.height, android.graphics.Bitmap.Config.ARGB_8888)
+          v.draw(android.graphics.Canvas(bmp))
+          png =
+              java.io.ByteArrayOutputStream().use {
+                bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+                it.toByteArray()
+              }
+          bmp.recycle()
+        }
+        latch.countDown()
+      }
+      latch.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+      return png
+    }
+  }
+
+  /** Bumped when Home is pressed while we're already in front: the dashboard comes back. */
+  private val homePresses = androidx.compose.runtime.mutableIntStateOf(0)
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    if (intent.hasCategory(Intent.CATEGORY_HOME)) homePresses.intValue++
   }
 
   // Re-assert immersive fullscreen whenever the launcher regains focus — e.g.
@@ -247,6 +295,7 @@ class HomeActivity : ComponentActivity() {
   // settings, put them back every time Immortal comes to the foreground.
   override fun onResume() {
     super.onResume()
+    foreground = java.lang.ref.WeakReference(this)
     // The user is back on Immortal, so any stock-launcher call handoff is over:
     // allow the photo frame to resume its normal screensaver behaviour.
     DreamPolicy.clearBridge(this)
@@ -258,6 +307,7 @@ class HomeActivity : ComponentActivity() {
 
   override fun onPause() {
     super.onPause()
+    foreground = null
     // Don't carry a pending overnight re-sleep into another activity or a real sleep.
     SleepScheduler.onLeftLauncher()
   }
@@ -349,6 +399,51 @@ class HomeActivity : ComponentActivity() {
               .addCategory(Intent.CATEGORY_LAUNCHER)
               .setComponent(ComponentName(stock.packageName, stock.name)))
     }
+  }
+}
+
+/**
+ * Picks what Home shows: the widget dashboard ([DashboardScreen]) or the app grid. In dashboard
+ * mode the grid is one tap away (Apps), and Back, Home, or leaving for another app returns to
+ * the dashboard. The mode is re-read on resume so a change in Settings applies on return.
+ */
+@Composable
+private fun HomeRoot(
+    homePresses: androidx.compose.runtime.State<Int>,
+    onCalls: () -> Unit,
+    onOpenStore: () -> Unit,
+    onStartScreensaver: () -> Unit,
+    launcher: @Composable () -> Unit,
+) {
+  val context = androidx.compose.ui.platform.LocalContext.current
+  var mode by remember { mutableStateOf(ImmortalSettings.load(context).homeMode) }
+  var showApps by remember { mutableStateOf(false) }
+  val lifecycleOwner = LocalLifecycleOwner.current
+  DisposableEffect(lifecycleOwner) {
+    val obs = LifecycleEventObserver { _, e ->
+      when (e) {
+        Lifecycle.Event.ON_RESUME -> mode = ImmortalSettings.load(context).homeMode
+        Lifecycle.Event.ON_STOP -> showApps = false
+        else -> {}
+      }
+    }
+    lifecycleOwner.lifecycle.addObserver(obs)
+    onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+  }
+  val presses = homePresses.value
+  androidx.compose.runtime.LaunchedEffect(presses) { showApps = false }
+  if (mode == ImmortalSettings.HOME_DASHBOARD && !showApps) {
+    DashboardScreen(
+        onOpenApps = { showApps = true },
+        onCalls = onCalls,
+        onOpenStore = onOpenStore,
+        onScreensaver = onStartScreensaver,
+    )
+  } else {
+    if (mode == ImmortalSettings.HOME_DASHBOARD) {
+      androidx.activity.compose.BackHandler { showApps = false }
+    }
+    launcher()
   }
 }
 
@@ -1275,7 +1370,7 @@ private fun LauncherScreen(
  * reaching the grid beneath, so the only way out is the slider (or the 60s auto-silence).
  */
 @Composable
-private fun TimerAlarmOverlay(onStop: () -> Unit) {
+internal fun TimerAlarmOverlay(onStop: () -> Unit) {
   val noRipple = remember { MutableInteractionSource() }
   Box(
       contentAlignment = Alignment.Center,
@@ -1825,10 +1920,10 @@ private fun heyPackage(context: android.content.Context): String? =
     }
 
 /** Muse owns the hey button once it's paired and the user left that option on. */
-private fun museHeyEnabled(context: android.content.Context): Boolean =
+internal fun museHeyEnabled(context: android.content.Context): Boolean =
     MuseConfig.isEnabled(context) && MuseConfig.isPaired(context) && MuseConfig.heyButton(context)
 
-private fun openMuse(context: android.content.Context, talk: Boolean) {
+internal fun openMuse(context: android.content.Context, talk: Boolean) {
   context.startActivity(Intent(context, MuseActivity::class.java).putExtra(MuseActivity.EXTRA_TALK, talk))
 }
 
@@ -1856,7 +1951,7 @@ private fun openHeyPicker(context: android.content.Context, pkg: String) {
 
 /** White line-art microphone glyph for the header "hey" button. */
 @Composable
-private fun MicGlyph() {
+internal fun MicGlyph() {
   Canvas(modifier = Modifier.size(28.dp)) {
     val w = size.minDimension
     val s = w * 0.08f
@@ -2620,7 +2715,7 @@ private fun ImmortalWidgetShell(
 }
 
 @Composable
-private fun ImmortalWeatherWidget(modifier: Modifier = Modifier) {
+internal fun ImmortalWeatherWidget(modifier: Modifier = Modifier) {
   val context = androidx.compose.ui.platform.LocalContext.current
   var fahrenheit by remember { mutableStateOf(ImmortalSettings.useFahrenheit(context)) }
   val lifecycleOwner = LocalLifecycleOwner.current
