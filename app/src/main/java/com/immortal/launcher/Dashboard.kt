@@ -315,7 +315,7 @@ private fun NowPlayingCard(np: NowPlayingState?, modifier: Modifier = Modifier) 
         Column {
           Text("Nothing playing", color = Color.White, fontSize = 20.sp)
           Text(
-              "Ask Alfred or Google to play something",
+              "Ask Alfred to play something",
               color = Muted,
               fontSize = 14.sp,
               modifier = Modifier.padding(top = 4.dp))

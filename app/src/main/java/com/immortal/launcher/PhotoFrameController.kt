@@ -1188,10 +1188,12 @@ class PhotoFrameController(
     val longest = maxOf(w, h)
     var s = if (longest > MAX_EDGE) Integer.highestOneBit(longest / MAX_EDGE) else 1
     // Beyond the crash cap, don't decode much more than the panel can show: a 4032px phone photo
-    // on a 1280px Portal Mini otherwise lands as a ~48MB bitmap every slide. Halve while the result
-    // still covers the panel's long edge (Ken Burns zooms in a little, so never go below it).
+    // on a 1280px Portal Mini otherwise lands as a ~48MB bitmap every slide. Halve while the
+    // photo's SHORT edge still covers the panel's long edge, so fill mode never has to upscale
+    // whichever way round the photo and panel are (Ken Burns zooms in a little on top).
     val panel = displayLongEdge()
-    while (longest / (s * 2) >= panel) s *= 2
+    val shortest = minOf(w, h)
+    while (shortest / (s * 2) >= panel) s *= 2
     return s
   }
 
