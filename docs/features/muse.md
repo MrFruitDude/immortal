@@ -68,7 +68,7 @@ checksum-verified.
 | `music.radio` | Find a station by name or genre (radio-browser.info) and play it here or on a Google Home / Cast group |
 | `voice.configure` | Read or set the volume |
 | `app.list`, `app.launch`, `app.open_url`, `media.control` | Open apps and links; play/pause/skip what's playing |
-| `ha.states`, `ha.call` | Home Assistant: read entities, call services (once its URL and token are set) |
+| `ha.states`, `ha.call` | Home Assistant: read entities, call services (once connected, see [Smart home](#smart-home)) |
 | `hue.pair`, `hue.lights`, `hue.set` | Philips Hue: pair (press the bridge button), then lights, rooms, colours, scenes |
 | `cast.status`, `cast.play_url`, `cast.say`, `cast.control`, `cast.volume` | Google Home / Nest speakers, displays and **speaker groups** |
 | `lan.discover`, `lan.http` | Find devices with mDNS; call local HTTP APIs (private addresses only) |
@@ -86,6 +86,31 @@ back:
 
 The page has no access to device files or other apps. A long-press closes it, and so does its
 timeout, after which the photo frame comes back. `canvas.snapshot` lets Muse see what it drew.
+
+### Smart home
+
+**Settings › Muse › Smart home › Connect your smart home** (also opened from the home dashboard)
+connects Home Assistant and Philips Hue without pasting anything. Alfred and the dashboard's
+thermostat and light cards both use these connections.
+
+- **Home Assistant.** The Portal looks for Home Assistant on your network (mDNS
+  `_home-assistant._tcp`) and lists what it finds, or you can type its address. Tap one and sign
+  in with your Home Assistant account on the Portal's screen; that's HA's own login page. Immortal
+  then creates a long-lived token named `Immortal – <Portal name>`. You'll find it, and can revoke
+  it, in your HA profile › Security. The temporary login is revoked straight away. The screen
+  then shows how many thermostats and lights it found and whether any come from the **Hilo**
+  integration (Hydro-Québec). If none do, install Hilo through HACS in Home Assistant.
+- **Philips Hue.** The Portal finds the bridge (mDNS `_hue._tcp`; **Search again** also asks
+  Philips' discovery service). Tap it and press the round button on the bridge within 30 seconds.
+  The screen then shows its rooms and scenes.
+- **Disconnect** clears the stored URL and token, or the bridge key. The manual **Home Assistant
+  URL** and **token** fields stay under Smart home if you'd rather paste a token yourself.
+
+How the HA sign-in works: the Portal uses HA's standard OAuth2/IndieAuth flow with client id
+`http://immortal.portal/` and redirect `http://immortal.portal/auth_callback`. Both are on the
+same host, so Home Assistant accepts the redirect without fetching anything. The redirect never
+loads; the Portal catches it, checks the `state`, swaps the code for a short-lived token, and
+uses HA's WebSocket API once to mint the long-lived one. Tokens are never logged.
 
 ### Staying in control
 

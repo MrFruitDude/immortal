@@ -338,6 +338,15 @@
             android:exported="false"
             android:theme="@style/Theme.SampleApp" />
 
+        <!-- Connect your smart home: Home Assistant (on-device HA login) and Philips Hue
+             (link button). Handles rotation itself so a sign-in in progress isn't lost. -->
+        <activity
+            android:name=".SmartHomeConnectActivity"
+            android:exported="false"
+            android:label="Connect your smart home"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:theme="@style/Theme.SampleApp" />
+
         <!-- Connect an SMB / network share (NAS) as the screensaver source. -->
         <activity
             android:name=".SmbConnectActivity"
