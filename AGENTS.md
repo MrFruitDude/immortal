@@ -90,7 +90,9 @@ The Kotlin package is flat; files are grouped by name prefix:
   Cast bridge `MuseLan`, push-to-talk `MuseVoice` / `MuseActivity`, screen `MuseDisplayActivity`,
   canvas `MuseCanvasActivity`, smart home / music / apps `MuseHome`, settings `MuseSettingsActivity`;
   the character and conversation `Alfred` / `AlfredAvatar` / `AlfredStage`, on-device wake word
-  `AlfredWake`; see `docs/features/muse.md`
+  `AlfredWake`, hands-free conversations `AlfredSession` (pure `AlfredSessionMachine` +
+  `AlfredEndpointer` turn detection) shown in the `AlfredOverlay` popover; see
+  `docs/features/muse.md`
 - **Remote / Portal TV:** `Remote*`, `TvFocus`
 - **Boot / lifecycle:** `ImmortalApp`, `BootReceiver`, `BootLaunch`, `Sleep*`, `ScreenControl`
 - **Settings (the registry — read [Settings infrastructure](#settings-infrastructure) before
