@@ -1726,6 +1726,14 @@ private fun WallpaperSection() {
               Modifier.fillMaxSize()
                   .background(Brush.verticalGradient(listOf(Color(0xFF3A7BD5), Color(0xFF8FD3F4)))))
         }
+        WallpaperSwatch("Live weather", selected = mode == WallpaperConfig.WEATHER, onClick = {
+          mode = WallpaperConfig.WEATHER
+          WallpaperConfig.setMode(context, WallpaperConfig.WEATHER)
+        }) {
+          Spacer(
+              Modifier.fillMaxSize()
+                  .background(Brush.verticalGradient(listOf(Color(0xFF4A6A8C), Color(0xFFB8C8D8)))))
+        }
         WallpaperSwatch("Star field", selected = mode == WallpaperConfig.STARFIELD, onClick = {
           mode = WallpaperConfig.STARFIELD
           WallpaperConfig.setMode(context, WallpaperConfig.STARFIELD)

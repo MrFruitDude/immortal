@@ -25,6 +25,7 @@ object HomeControls {
   private const val TAG = "ImmortalHomeControls"
   private const val MAX_THERMOSTATS = 4
   private const val MAX_LIGHTS = 8
+  private const val MAX_SCENES = 16
 
   data class Thermostat(
       val entityId: String,
@@ -45,11 +46,15 @@ object HomeControls {
       val brightness: Int?,
   )
 
+  /** A Hue scene; [room] is the room/zone it belongs to (empty for an all-lights scene). */
+  data class Scene(val id: String, val name: String, val roomId: String, val room: String)
+
   data class Snapshot(
       val homeAssistant: Boolean,
       val hue: Boolean,
       val thermostats: List<Thermostat> = emptyList(),
       val lights: List<Light> = emptyList(),
+      val scenes: List<Scene> = emptyList(),
       val error: String? = null,
   ) {
     val configured: Boolean
@@ -71,7 +76,11 @@ object HomeControls {
           .onFailure { errors += "Home Assistant: ${it.message}" }
     }
     if (hue) {
-      runCatching { snap = snap.copy(lights = parseHueRooms(MuseHue.lights(c).getJSONArray("rooms"))) }
+      runCatching {
+            val hue = MuseHue.lights(c)
+            val rooms = hue.getJSONArray("rooms")
+            snap = snap.copy(lights = parseHueRooms(rooms), scenes = parseHueScenes(hue.getJSONArray("scenes"), rooms))
+          }
           .onFailure { errors += "Hue: ${it.message}" }
     }
     if (errors.isNotEmpty()) Log.w(TAG, errors.joinToString("; "))
@@ -86,6 +95,13 @@ object HomeControls {
           MuseHomeAssistant.callService(
               c, "light", if (light.on) "turn_off" else "turn_on", JSONObject().put("entity_id", light.id.removePrefix("ha:")))
     }
+  }
+
+  /** Recall a Hue scene on its room (or on every light for an all-lights scene). */
+  fun activate(c: Context, scene: Scene) {
+    val p = JSONObject().put("scene", scene.id)
+    if (scene.roomId.isNotEmpty()) p.put("room", scene.roomId)
+    MuseHue.set(c, p)
   }
 
   fun setTarget(c: Context, t: Thermostat, target: Double) {
@@ -135,6 +151,25 @@ object HomeControls {
           .filter { it.optString("type") == "Room" || it.optString("type") == "Zone" }
           .map { Light(id = "hue:" + it.optString("name"), name = it.optString("name"), on = it.optBoolean("any_on"), brightness = null) }
           .take(MAX_LIGHTS)
+
+  /**
+   * Hue scenes, named after their room when the same name exists in several rooms ("Honolulu ·
+   * Living room"). Sorted by name so the chips don't reshuffle between reads.
+   */
+  internal fun parseHueScenes(scenes: JSONArray, rooms: JSONArray): List<Scene> {
+    val roomNames =
+        (0 until rooms.length()).associate { rooms.getJSONObject(it).let { r -> r.optString("id") to r.optString("name") } }
+    return (0 until scenes.length())
+        .map { scenes.getJSONObject(it) }
+        .filter { it.optString("name").isNotBlank() }
+        .map {
+          val g = it.optString("group")
+          Scene(id = it.optString("id"), name = it.optString("name"), roomId = g, room = roomNames[g].orEmpty())
+        }
+        .distinctBy { it.name.lowercase() + "|" + it.roomId }
+        .sortedWith(compareBy({ it.name.lowercase() }, { it.room }))
+        .take(MAX_SCENES)
+  }
 
   private fun JSONObject.optDoubleOrNull(key: String): Double? =
       if (has(key) && !isNull(key)) optDouble(key).takeIf { !it.isNaN() } else null

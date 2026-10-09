@@ -224,6 +224,101 @@ object Weather {
           }
           .getOrNull()
 
+  /**
+   * Everything the dashboard's weather card and the live weather wallpaper show, from one
+   * Open-Meteo request: now (temp, feels-like, condition, day/night, wind), today's high/low and
+   * sun times, the next hours and the week.
+   */
+  data class Conditions(
+      val city: String,
+      val temp: Int,
+      val feelsLike: Int,
+      val code: Int,
+      val isDay: Boolean,
+      val wind: Int,
+      val windUnit: String,
+      val hi: Int,
+      val lo: Int,
+      val precipChance: Int,
+      val sunriseMillis: Long,
+      val sunsetMillis: Long,
+      val hours: List<HourForecast>,
+      val days: List<DayForecast>,
+  )
+
+  fun fetchConditions(context: Context): Conditions? =
+      runCatching {
+            val (lat, lon) = location(context) ?: return null
+            val f = ImmortalSettings.useFahrenheit(context)
+            val json = httpGet(conditionsUrl(lat, lon, f))
+            parseConditions(json, cachedCity(context), f, System.currentTimeMillis(), ImmortalSettings.use24HourClock(context))
+          }
+          .getOrNull()
+
+  internal fun conditionsUrl(lat: Double, lon: Double, fahrenheit: Boolean): String =
+      forecastUrl(lat, lon, fahrenheit)
+          .replace(
+              "&daily=weather_code,temperature_2m_max,temperature_2m_min",
+              "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max") +
+          "&current=temperature_2m,apparent_temperature,weather_code,is_day,wind_speed_10m" +
+          "&wind_speed_unit=" + if (fahrenheit) "mph" else "kmh"
+
+  internal fun parseConditions(
+      json: String,
+      city: String,
+      fahrenheit: Boolean,
+      nowMillis: Long,
+      use24Hour: Boolean = false,
+  ): Conditions {
+    val root = JSONObject(json)
+    val cur = root.getJSONObject("current")
+    val daily = root.getJSONObject("daily")
+    val iso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm", Locale.US)
+    val days = parseDays(root)
+    return Conditions(
+        city = city,
+        temp = cur.getDouble("temperature_2m").roundToInt(),
+        feelsLike = cur.optDouble("apparent_temperature", cur.getDouble("temperature_2m")).roundToInt(),
+        code = cur.getInt("weather_code"),
+        isDay = cur.optInt("is_day", 1) == 1,
+        wind = cur.optDouble("wind_speed_10m", 0.0).roundToInt(),
+        windUnit = if (fahrenheit) "mph" else "km/h",
+        hi = days.firstOrNull()?.hi ?: 0,
+        lo = days.firstOrNull()?.lo ?: 0,
+        precipChance = daily.optJSONArray("precipitation_probability_max")?.optInt(0, 0) ?: 0,
+        sunriseMillis = runCatching { iso.parse(daily.getJSONArray("sunrise").getString(0))!!.time }.getOrDefault(0L),
+        sunsetMillis = runCatching { iso.parse(daily.getJSONArray("sunset").getString(0))!!.time }.getOrDefault(0L),
+        hours = parseHours(root, nowMillis, use24Hour),
+        days = days,
+    )
+  }
+
+  /** A short condition name for a WMO weather code ("Partly cloudy", "Light snow", …). */
+  fun conditionName(code: Int): String =
+      when (code) {
+        0 -> "Clear"
+        1 -> "Mostly clear"
+        2 -> "Partly cloudy"
+        3 -> "Cloudy"
+        45, 48 -> "Fog"
+        51, 53, 55 -> "Drizzle"
+        56, 57 -> "Freezing drizzle"
+        61 -> "Light rain"
+        63 -> "Rain"
+        65 -> "Heavy rain"
+        66, 67 -> "Freezing rain"
+        71 -> "Light snow"
+        73 -> "Snow"
+        75 -> "Heavy snow"
+        77 -> "Snow grains"
+        80, 81 -> "Showers"
+        82 -> "Heavy showers"
+        85, 86 -> "Snow showers"
+        95 -> "Thunderstorm"
+        96, 99 -> "Thunderstorm, hail"
+        else -> ""
+      }
+
   /** One day of the multi-day forecast. [label] is "Today" then "Mon", "Tue", … */
   data class DayForecast(val label: String, val code: Int, val hi: Int, val lo: Int)
 

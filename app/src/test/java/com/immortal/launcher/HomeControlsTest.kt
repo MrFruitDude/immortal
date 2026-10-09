@@ -55,4 +55,16 @@ class HomeControlsTest {
     assertEquals(listOf("hue:Living", "hue:Upstairs"), l.map { it.id })
     assertEquals(true, l[0].on)
   }
+
+  @Test
+  fun hueScenes_keepRoomAndSortByName() {
+    val rooms = JSONArray("""[{"id":"1","name":"Living room","type":"Room"},{"id":"2","name":"Bedroom","type":"Room"}]""")
+    val scenes =
+        JSONArray(
+            """[{"id":"a","name":"Pumpkin Spice","group":"1"},{"id":"b","name":"Honolulu","group":"1"},
+               {"id":"c","name":"Honolulu","group":"2"},{"id":"d","name":"Honolulu","group":"1"},
+               {"id":"e","name":"","group":"1"}]""")
+    val s = HomeControls.parseHueScenes(scenes, rooms)
+    assertEquals(listOf("Honolulu|Bedroom", "Honolulu|Living room", "Pumpkin Spice|Living room"), s.map { it.name + "|" + it.room })
+  }
 }

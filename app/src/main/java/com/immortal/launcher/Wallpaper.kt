@@ -54,6 +54,8 @@ object WallpaperConfig {
   // and the real night sky projected for the device's location. Formerly ForkHome-only.
   const val SKY = "sky"
   const val STARFIELD = "starfield"
+  // The live sky plus the current weather (clouds, rain, snow, sun and moon) — [WeatherSky].
+  const val WEATHER = "weather"
 
   data class Config(val mode: String = DARK, val grain: Boolean = false)
 
@@ -179,6 +181,7 @@ fun HomeBackground(modifier: Modifier = Modifier) {
         DayProgressBar()
       }
       mode == WallpaperConfig.STARFIELD -> StarFieldBackground()
+      mode == WallpaperConfig.WEATHER -> WeatherSky()
       gradient != null -> {
         androidx.compose.foundation.layout.Box(
             Modifier.fillMaxSize().background(Brush.verticalGradient(gradient.map { Color(it) })))

@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
@@ -78,7 +79,7 @@ private const val HOME_POLL_MS = 45_000L
 /** Let a burst of thermostat taps settle into one service call. */
 private const val SETPOINT_DEBOUNCE_MS = 900L
 
-private val CardFill = Color(0xB3141418)
+private val CardFill = Color(0x8C10141C)
 private val CardEdge = Color(0x1FFFFFFF)
 private val Muted = Color(0xFFA9A9B2)
 private val Accent = Color(0xFF4C8DFF)
@@ -142,10 +143,15 @@ internal fun DashboardScreen(
   }
 
   Box(Modifier.fillMaxSize()) {
-    HomeBackground(Modifier.fillMaxSize())
-    Box(
-        Modifier.fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color(0x66000000), Color(0x99000000)))))
+    // The live weather sky, unless the user picked a photo or a fixed gradient as their wallpaper.
+    val wallpaper = remember { WallpaperConfig.load(context).mode }
+    if (wallpaper in setOf(WallpaperConfig.DARK, WallpaperConfig.SKY, WallpaperConfig.WEATHER)) {
+      WeatherSky(Modifier.fillMaxSize())
+      Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x33000000), Color(0x59000000)))))
+    } else {
+      HomeBackground(Modifier.fillMaxSize())
+      Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x66000000), Color(0x99000000)))))
+    }
     BoxWithConstraints(Modifier.fillMaxSize().padding(start = 32.dp, end = 32.dp, top = 28.dp, bottom = 24.dp)) {
       val portrait = maxHeight > maxWidth
       val snap = home
@@ -174,7 +180,7 @@ internal fun DashboardScreen(
           // Idle, the music card only needs room for its hint; the rest goes to the other cards.
           NowPlayingCard(np, Modifier.fillMaxWidth().weight(if (playing) 0.8f else 0.4f))
           Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            ImmortalWeatherWidget(Modifier.weight(1f).fillMaxHeight())
+            DashboardWeatherCard(Modifier.weight(1f).fillMaxHeight())
             if (snap != null && snap.configured && snap.homeAssistant) {
               ClimateCard(snap, Modifier.weight(1f).fillMaxHeight(), onChanged = { refresh++ })
             } else if (snap == null || !snap.configured) {
@@ -202,7 +208,7 @@ internal fun DashboardScreen(
           Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Column(Modifier.weight(1.25f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
               NowPlayingCard(np, Modifier.fillMaxWidth().weight(if (playing) 1f else 0.6f))
-              ImmortalWeatherWidget(Modifier.fillMaxWidth().weight(1f))
+              DashboardWeatherCard(Modifier.fillMaxWidth().weight(1f))
             }
             homeCards(Modifier.weight(1f).fillMaxHeight(), Modifier.weight(1f).fillMaxHeight())
           }
@@ -294,6 +300,11 @@ private fun DashCard(title: String, modifier: Modifier = Modifier, content: @Com
       }
 }
 
+/**
+ * What's playing, album-art first (like Apple Music's now-playing): the cover on the left, the
+ * card tinted with the cover's own colour, title/artist, a progress bar and the transport. Idle,
+ * it shrinks to a one-line hint.
+ */
 @Composable
 private fun NowPlayingCard(np: NowPlayingState?, modifier: Modifier = Modifier) {
   val context = LocalContext.current
@@ -303,57 +314,114 @@ private fun NowPlayingCard(np: NowPlayingState?, modifier: Modifier = Modifier) 
         if (value == null && !s?.artUrl.isNullOrBlank())
             value = withContext(Dispatchers.IO) { runCatching { MediaArt.resolveUri(context, s!!.artUrl) }.getOrNull() }
       }
-  DashCard("Now playing", modifier) {
-    if (s == null || !s.active) {
+  if (s == null || !s.active) {
+    DashCard("Now playing", modifier) {
       Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
         Box(
-            Modifier.size(84.dp).clip(RoundedCornerShape(18.dp)).background(Color(0x22FFFFFF)),
+            Modifier.size(64.dp).clip(RoundedCornerShape(16.dp)).background(Color(0x22FFFFFF)),
             contentAlignment = Alignment.Center) {
-              Glyph(GLYPH_NOTE, 36.dp, Muted)
+              Glyph(GLYPH_NOTE, 30.dp, Muted)
             }
         Spacer(Modifier.width(16.dp))
         Column {
           Text("Nothing playing", color = Color.White, fontSize = 20.sp)
+          Text("Ask Alfred to play something", color = Muted, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp))
+        }
+      }
+    }
+    return
+  }
+  val bmp = cover
+  val tint = remember(bmp) { bmp?.let { dominantColor(it) } ?: Color(0xFF2A2F3A) }
+  Row(
+      modifier
+          .clip(RoundedCornerShape(26.dp))
+          .background(Brush.linearGradient(listOf(tint, darken(tint, 0.55f))))
+          .border(1.dp, CardEdge, RoundedCornerShape(26.dp))
+          .padding(14.dp),
+      verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier.fillMaxHeight().aspectSquare().clip(RoundedCornerShape(18.dp)).background(Color(0x22FFFFFF))) {
+              if (bmp != null)
+                  Image(bmp.asImageBitmap(), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+              else Glyph(GLYPH_NOTE, 40.dp, Muted, Modifier.align(Alignment.Center))
+            }
+        Spacer(Modifier.width(20.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
           Text(
-              "Ask Alfred to play something",
-              color = Muted,
-              fontSize = 14.sp,
-              modifier = Modifier.padding(top = 4.dp))
-        }
-      }
-      return@DashCard
-    }
-    Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-      val bmp = cover
-      Box(Modifier.fillMaxHeight().aspectSquare().clip(RoundedCornerShape(18.dp)).background(Color(0x22FFFFFF))) {
-        if (bmp != null)
-            Image(bmp.asImageBitmap(), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-        else Glyph(GLYPH_NOTE, 40.dp, Muted, Modifier.align(Alignment.Center))
-      }
-      Spacer(Modifier.width(18.dp))
-      Column(Modifier.weight(1f)) {
-        Text(
-            s.title,
-            color = Color.White,
-            fontSize = 22.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            modifier = Modifier.basicMarquee())
-        if (s.artist.isNotBlank())
-            Text(s.artist, color = Muted, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Spacer(Modifier.height(14.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-          RoundButton(GLYPH_PREV, 48.dp, Color(0x26FFFFFF)) { NowPlayingHub.previous() }
-          RoundButton(
-              if (s.state == PlaybackState.PLAYING) GLYPH_PAUSE else GLYPH_PLAY, 60.dp, Color.White, Color.Black) {
-                NowPlayingHub.playPause()
+              s.title,
+              color = Color.White,
+              fontSize = 24.sp,
+              fontWeight = FontWeight.SemiBold,
+              maxLines = 1,
+              modifier = Modifier.basicMarquee())
+          if (s.artist.isNotBlank())
+              Text(s.artist, color = Color(0xCCFFFFFF), fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+          Spacer(Modifier.height(14.dp))
+          PlaybackProgress(s)
+          Spacer(Modifier.height(14.dp))
+          Row(
+              Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceEvenly,
+              verticalAlignment = Alignment.CenterVertically) {
+                RoundButton(GLYPH_PREV, 52.dp, Color.Transparent) { NowPlayingHub.previous() }
+                RoundButton(if (s.state == PlaybackState.PLAYING) GLYPH_PAUSE else GLYPH_PLAY, 64.dp, Color(0x33FFFFFF)) {
+                  NowPlayingHub.playPause()
+                }
+                RoundButton(GLYPH_NEXT, 52.dp, Color.Transparent) { NowPlayingHub.next() }
               }
-          RoundButton(GLYPH_NEXT, 48.dp, Color(0x26FFFFFF)) { NowPlayingHub.next() }
         }
       }
-    }
+}
+
+/**
+ * Elapsed / remaining with a thin bar. The hub only notifies on track changes, so while playing
+ * this reads the latest position once a second itself — and only while the card is on screen.
+ */
+@Composable
+private fun PlaybackProgress(s: NowPlayingState) {
+  if (s.durationMs <= 0L) return
+  val pos by
+      produceState(s.positionMs, s.title, s.state) {
+        while (true) {
+          value = NowPlayingHub.current?.positionMs ?: value
+          if (s.state != PlaybackState.PLAYING) break
+          delay(1000)
+        }
+      }
+  val frac = (pos.toFloat() / s.durationMs).coerceIn(0f, 1f)
+  Box(Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)).background(Color(0x33FFFFFF))) {
+    Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(Color(0xE6FFFFFF)))
+  }
+  Row(Modifier.fillMaxWidth().padding(top = 5.dp)) {
+    Text(mmss(pos), color = Color(0x99FFFFFF), fontSize = 12.sp)
+    Spacer(Modifier.weight(1f))
+    Text("-" + mmss(s.durationMs - pos), color = Color(0x99FFFFFF), fontSize = 12.sp)
   }
 }
+
+private fun mmss(ms: Long): String {
+  val t = (ms / 1000).coerceAtLeast(0)
+  return "%d:%02d".format(t / 60, t % 60)
+}
+
+/** The cover's average colour, darkened a touch so white text always reads on it. */
+private fun dominantColor(b: android.graphics.Bitmap): Color {
+  val small = android.graphics.Bitmap.createScaledBitmap(b, 8, 8, true)
+  var r = 0
+  var g = 0
+  var bl = 0
+  for (x in 0 until 8) for (y in 0 until 8) {
+    val p = small.getPixel(x, y)
+    r += android.graphics.Color.red(p)
+    g += android.graphics.Color.green(p)
+    bl += android.graphics.Color.blue(p)
+  }
+  if (small !== b) small.recycle()
+  return darken(Color(r / 64, g / 64, bl / 64), 0.8f)
+}
+
+private fun darken(c: Color, f: Float) = Color(c.red * f, c.green * f, c.blue * f, 1f)
 
 @Composable
 private fun ClimateCard(snap: HomeControls.Snapshot, modifier: Modifier, onChanged: () -> Unit) {
@@ -445,6 +513,7 @@ private fun LightsCard(snap: HomeControls.Snapshot, modifier: Modifier, onChange
     }
     val rows = snap.lights.chunked(2)
     Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      if (snap.scenes.isNotEmpty()) SceneChips(snap, onChanged)
       rows.forEach { pair ->
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
           pair.forEach { light ->
@@ -484,6 +553,39 @@ private fun LightsCard(snap: HomeControls.Snapshot, modifier: Modifier, onChange
           if (pair.size == 1) Spacer(Modifier.weight(1f))
         }
       }
+    }
+  }
+}
+
+/** Hue scenes as tappable chips ("Honolulu", "Pumpkin Spice"); the room is added when a name repeats. */
+@Composable
+private fun SceneChips(snap: HomeControls.Snapshot, onChanged: () -> Unit) {
+  val context = LocalContext.current
+  val scope = rememberCoroutineScope()
+  var active by remember { mutableStateOf<String?>(null) }
+  val repeated = snap.scenes.groupingBy { it.name.lowercase() }.eachCount()
+  Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    snap.scenes.forEach { sc ->
+      val label = if ((repeated[sc.name.lowercase()] ?: 0) > 1 && sc.room.isNotBlank()) "${sc.name} · ${sc.room}" else sc.name
+      val on = active == sc.id
+      Text(
+          label,
+          color = if (on) Color(0xFF16161A) else Color.White,
+          fontSize = 14.sp,
+          fontWeight = FontWeight.Medium,
+          maxLines = 1,
+          modifier =
+              Modifier.clip(RoundedCornerShape(50))
+                  .background(if (on) Color(0xFFF4F1E8) else Color(0x1FFFFFFF))
+                  .tvFocusable(RoundedCornerShape(50)) {
+                    active = sc.id
+                    scope.launch {
+                      withContext(Dispatchers.IO) { runCatching { HomeControls.activate(context, sc) } }
+                      delay(1500)
+                      onChanged()
+                    }
+                  }
+                  .padding(horizontal = 14.dp, vertical = 9.dp))
     }
   }
 }
