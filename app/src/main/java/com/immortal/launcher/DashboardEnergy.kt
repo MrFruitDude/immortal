@@ -110,9 +110,7 @@ internal fun DashboardEnergyCard(modifier: Modifier = Modifier) {
 
   BoxWithConstraints(
       modifier
-          .clip(RoundedCornerShape(26.dp))
-          .background(EnergyFill)
-          .border(1.dp, EnergyEdge, RoundedCornerShape(26.dp))
+          .dashboardCardSurface(26.dp, androidx.compose.ui.graphics.SolidColor(EnergyFill), EnergyEdge)
           .padding(18.dp)) {
         val s = snap
         val home = s?.home?.takeIf { s.haConfigured }
