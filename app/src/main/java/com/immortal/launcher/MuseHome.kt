@@ -121,7 +121,8 @@ object MuseHue {
     fun compactScenes() = JSONArray().also { a ->
       scenes.keys().forEach { id ->
         val s = scenes.getJSONObject(id)
-        a.put(JSONObject().put("id", id).put("name", s.optString("name")).put("group", s.optString("group")))
+        a.put(JSONObject().put("id", id).put("name", s.optString("name")).put("group", s.optString("group"))
+            .put("recycle", s.optBoolean("recycle")))
       }
     }
     return JSONObject().put("lights", compactLights()).put("rooms", compactGroups()).put("scenes", compactScenes())

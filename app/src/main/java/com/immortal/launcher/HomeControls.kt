@@ -183,6 +183,7 @@ object HomeControls {
       (0 until rooms.length())
           .map { rooms.getJSONObject(it) }
           .filter { it.optString("type") == "Room" || it.optString("type") == "Zone" }
+          .sortedBy { it.optString("type") != "Room" } // rooms first, then zones like "Home"
           .map { Light(id = "hue:" + it.optString("name"), name = it.optString("name"), on = it.optBoolean("any_on"), brightness = null) }
           .take(MAX_LIGHTS)
 
@@ -195,7 +196,8 @@ object HomeControls {
         (0 until rooms.length()).associate { rooms.getJSONObject(it).let { r -> r.optString("id") to r.optString("name") } }
     return (0 until scenes.length())
         .map { scenes.getJSONObject(it) }
-        .filter { it.optString("name").isNotBlank() }
+        // Apps (Google Assistant, wake-up routines…) leave throwaway "recycle" scenes on the bridge.
+        .filter { it.optString("name").isNotBlank() && !it.optBoolean("recycle") }
         .map {
           val g = it.optString("group")
           Scene(id = it.optString("id"), name = it.optString("name"), roomId = g, room = roomNames[g].orEmpty())

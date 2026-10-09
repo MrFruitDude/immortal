@@ -72,8 +72,9 @@ internal fun DashboardWeatherCard(modifier: Modifier = Modifier) {
           Text("Weather", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
           return@BoxWithConstraints
         }
-        // Header ~110dp, hours ~84dp, then 34dp per day.
-        val dayRows = ((maxHeight.value - 110 - 84 - 24) / 34).toInt().coerceIn(0, w.days.size)
+        // Header ~120dp (more with the feels-like line), hours ~90dp, rules and gaps, 34dp per day.
+        val header = if (maxWidth.value > 300) 136 else 120
+        val dayRows = ((maxHeight.value - header - 90 - 30) / 34).toInt().coerceIn(0, w.days.size)
         val wide = maxWidth.value > 300
         Column {
           Row(verticalAlignment = Alignment.Top) {
@@ -100,7 +101,7 @@ internal fun DashboardWeatherCard(modifier: Modifier = Modifier) {
             w.hours.take(if (wide) 6 else 5).forEachIndexed { i, h ->
               Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(h.label, color = Soft, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1)
-                Text(icon(h.code, w.isDay || i > 0), fontSize = 18.sp, modifier = Modifier.padding(vertical = 4.dp))
+                Text(icon(h.code, if (i == 0) w.isDay else h.isDay), fontSize = 18.sp, modifier = Modifier.padding(vertical = 4.dp))
                 Text("${h.temp}°", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
               }
             }

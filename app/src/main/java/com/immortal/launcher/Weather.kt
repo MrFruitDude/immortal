@@ -259,7 +259,8 @@ object Weather {
       forecastUrl(lat, lon, fahrenheit)
           .replace(
               "&daily=weather_code,temperature_2m_max,temperature_2m_min",
-              "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max") +
+              "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max")
+          .replace("&hourly=weather_code,temperature_2m", "&hourly=weather_code,temperature_2m,is_day") +
           "&current=temperature_2m,apparent_temperature,weather_code,is_day,wind_speed_10m" +
           "&wind_speed_unit=" + if (fahrenheit) "mph" else "kmh"
 
@@ -323,7 +324,7 @@ object Weather {
   data class DayForecast(val label: String, val code: Int, val hi: Int, val lo: Int)
 
   /** One hour of the hourly forecast. [label] is "Now" then "1 PM", "2 PM", … */
-  data class HourForecast(val label: String, val code: Int, val temp: Int)
+  data class HourForecast(val label: String, val code: Int, val temp: Int, val isDay: Boolean = true)
 
   /** A combined forecast: both views are fetched in one call so the home-screen
    * widget can switch between hourly and 7-day without re-hitting the network. */
@@ -406,7 +407,8 @@ object Weather {
           HourForecast(
               label = if (first) "Now" else hourFmt.format(time.getString(i).let { isoHour.parse(it)!! }),
               code = code.getInt(i),
-              temp = temp.getDouble(i).roundToInt()))
+              temp = temp.getDouble(i).roundToInt(),
+              isDay = h.optJSONArray("is_day")?.optInt(i, 1) != 0))
       first = false
       if (out.size >= 12) break
     }
