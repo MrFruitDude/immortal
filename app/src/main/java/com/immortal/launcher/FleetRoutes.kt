@@ -555,6 +555,21 @@ class FleetRoutes(private val context: Context) {
             body.optString("send").takeIf { it.isNotBlank() }?.let {
               out.put("sent", MuseRuntime.sendChat(it, body.optString("sessionId").ifEmpty { null }))
             }
+            // {"samples":["en_US.3",…],"text":"…"}: render each voice to a WAV (no playback) under the
+            // app's files/tts-samples, so voices can be compared from a laptop with `fleetctl pull`.
+            body.optJSONArray("samples")?.let { arr ->
+              val dir = java.io.File(context.getExternalFilesDir(null), "tts-samples")
+              val text = body.optString("text").ifBlank { "Good evening. The living room is at twenty one degrees." }
+              val done = org.json.JSONArray()
+              for (i in 0 until arr.length()) {
+                val v = arr.getString(i)
+                MuseSpeech.synthesizeToFile(context, text, voice = v, dir = dir)?.let { f ->
+                  val named = java.io.File(dir, "$v.wav")
+                  if (f.renameTo(named)) done.put(named.absolutePath)
+                }
+              }
+              out.put("samples", done)
+            }
             body.optString("say").takeIf { it.isNotBlank() }?.let {
               out.put("said", MuseSpeech.speakAndWait(context, it) ?: "ok")
             }

@@ -735,10 +735,17 @@ object MuseSpeech {
   }
 
   /** Renders [text] to a WAV in the cache; null if there's no engine. */
-  fun synthesizeToFile(context: Context, text: String, language: String? = null): File? {
+  fun synthesizeToFile(
+      context: Context,
+      text: String,
+      language: String? = null,
+      voice: String? = null,
+      dir: File = File(context.cacheDir, "muse-speech"),
+  ): File? {
     val t = engine(context) ?: return null
     applyLanguage(context, t, language)
-    val dir = File(context.cacheDir, "muse-speech").apply { mkdirs() }
+    if (voice != null) runCatching { t.voices?.firstOrNull { it.name == voice }?.let { t.voice = it } }
+    dir.mkdirs()
     dir.listFiles()?.filter { System.currentTimeMillis() - it.lastModified() > 15 * 60_000 }?.forEach { it.delete() }
     val file = File(dir, "${UUID.randomUUID()}.wav")
     val id = UUID.randomUUID().toString()
