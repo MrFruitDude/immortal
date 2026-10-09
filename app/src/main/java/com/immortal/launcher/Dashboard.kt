@@ -163,9 +163,10 @@ internal fun DashboardScreen(
       val homeCards: @Composable (Modifier, Modifier) -> Unit = { climateMod, lightsMod ->
         if (snap != null && snap.configured) {
           if (snap.homeAssistant) ClimateCard(snap, climateMod, onChanged = { refresh++ })
-          LightsCard(snap, lightsMod, onChanged = { refresh++ })
+          // Energy stacks under the lights: that card scrolls, so it gives up height gracefully.
+          WithEnergyBelow(lightsMod) { LightsCard(snap, it, onChanged = { refresh++ }) }
         } else {
-          SetupCard(loading = snap == null, climateMod)
+          WithEnergyBelow(climateMod) { SetupCard(loading = snap == null, it) }
         }
       }
       if (portrait) {
@@ -178,8 +179,18 @@ internal fun DashboardScreen(
             MinuteDateText(fontSize = 22.sp, color = Color(0xFFDADADA), modifier = Modifier.padding(bottom = 12.dp))
           }
           Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { actions() }
-          // Idle, the music card only needs room for its hint; the rest goes to the other cards.
-          NowPlayingCard(np, Modifier.fillMaxWidth().weight(if (playing) 0.8f else 0.4f))
+          // Idle, the music card only needs room for its hint, so it shares a row with the energy
+          // card. Playing, it takes the width and energy gets a shorter row of its own (home and
+          // grid side by side), paid for by the lights (which scroll) — never by the thermostats.
+          if (playing) {
+            NowPlayingCard(np, Modifier.fillMaxWidth().weight(0.62f))
+            DashboardEnergyCard(Modifier.fillMaxWidth().weight(0.5f))
+          } else {
+            Row(Modifier.fillMaxWidth().weight(0.8f), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+              NowPlayingCard(np, Modifier.weight(0.4f).fillMaxHeight())
+              DashboardEnergyCard(Modifier.weight(0.6f).fillMaxHeight())
+            }
+          }
           Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             DashboardWeatherCard(Modifier.weight(1f).fillMaxHeight())
             if (snap != null && snap.configured && snap.homeAssistant) {
@@ -189,7 +200,7 @@ internal fun DashboardScreen(
             }
           }
           if (snap != null && snap.configured) {
-            LightsCard(snap, Modifier.fillMaxWidth().weight(0.9f), onChanged = { refresh++ })
+            LightsCard(snap, Modifier.fillMaxWidth().weight(if (playing) 0.6f else 0.9f), onChanged = { refresh++ })
           }
         }
       } else {
