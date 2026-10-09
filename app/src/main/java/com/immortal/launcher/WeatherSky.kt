@@ -149,8 +149,20 @@ internal fun WeatherSky(modifier: Modifier = Modifier) {
       val cy = h * 0.14f
       val r = unit * 0.05f
       drawCircle(Brush.radialGradient(listOf(Color(0x33E8EEFF), Color.Transparent), Offset(cx, cy), r * 4f), r * 4f, Offset(cx, cy))
-      drawCircle(Color(0xFFE9EDF5), r, Offset(cx, cy))
-      drawCircle(scene.top, r * 0.92f, Offset(cx + r * 0.45f, cy - r * 0.2f)) // crescent
+      // A real crescent: the disc minus an offset disc, so the sky shows through (painting a
+      // sky-coloured disc over it read as a dark ball wherever the gradient didn't match).
+      val crescent =
+          androidx.compose.ui.graphics.Path().apply {
+            op(
+                androidx.compose.ui.graphics.Path().apply {
+                  addOval(androidx.compose.ui.geometry.Rect(Offset(cx, cy), r))
+                },
+                androidx.compose.ui.graphics.Path().apply {
+                  addOval(androidx.compose.ui.geometry.Rect(Offset(cx + r * 0.45f, cy - r * 0.2f), r * 0.92f))
+                },
+                androidx.compose.ui.graphics.PathOperation.Difference)
+          }
+      drawPath(crescent, Color(0xFFE9EDF5))
     }
     // Clouds: soft clusters of overlapping glows, drifting ~1% of the width a minute.
     val drift = (nowMin % 100) / 100f

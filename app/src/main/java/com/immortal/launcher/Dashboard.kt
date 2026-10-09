@@ -670,7 +670,7 @@ private const val GLYPH_STORE =
 private const val GLYPH_PLAY = "M8 5v14l11-7z"
 private const val GLYPH_PAUSE = "M6 19h4V5H6v14zm8-14v14h4V5h-4z"
 private const val GLYPH_NEXT = "M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"
-private const val GLYPH_PREV = "M6 6h2v12H6zm3.5 6l8.5 6V6z"
+private const val GLYPH_PREV = "M6 6h2v12H6z M9.5 12l8.5 6V6z" // absolute after z: some parsers misplace a relative move
 private const val GLYPH_NOTE =
     "M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
 private const val GLYPH_BULB =
