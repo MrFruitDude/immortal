@@ -235,6 +235,8 @@ object AlfredOverlay {
     // Fade out, then drop the windows (and with them every animation).
     c?.let { v -> v.animate().alpha(0f).setDuration(200).withEndAction { removeView(v) }.start() }
     g?.let { v -> v.animate().alpha(0f).setDuration(300).withEndAction { removeView(v) }.start() }
+    // Belt and braces: the glow keeps the screen on, so never rely on an animation end alone.
+    main.postDelayed({ c?.let { removeView(it) }; g?.let { removeView(it) } }, 600)
     listeners.forEach { runCatching { it(null) } }
   }
 

@@ -381,12 +381,16 @@ private fun NowPlayingCard(np: NowPlayingState?, modifier: Modifier = Modifier) 
 @Composable
 private fun PlaybackProgress(s: NowPlayingState) {
   if (s.durationMs <= 0L) return
+  val lifecycle = LocalLifecycleOwner.current.lifecycle
   val pos by
       produceState(s.positionMs, s.title, s.state) {
-        while (true) {
-          value = NowPlayingHub.current?.positionMs ?: value
-          if (s.state != PlaybackState.PLAYING) break
-          delay(1000)
+        // Only while the dashboard is actually visible — not behind the screensaver or an app.
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+          while (true) {
+            value = NowPlayingHub.current?.positionMs ?: value
+            if (s.state != PlaybackState.PLAYING) break
+            delay(1000)
+          }
         }
       }
   val frac = (pos.toFloat() / s.durationMs).coerceIn(0f, 1f)

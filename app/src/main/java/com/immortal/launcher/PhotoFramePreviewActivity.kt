@@ -221,6 +221,16 @@ class PhotoFramePreviewActivity : ComponentActivity() {
     return true
   }
 
+  override fun onResume() {
+    super.onResume()
+    if (nightClock) HomeActivity.setForeground(this)
+  }
+
+  override fun onPause() {
+    super.onPause()
+    if (nightClock) HomeActivity.setForeground(null)
+  }
+
   override fun onDestroy() {
     powerReceiver?.let { runCatching { unregisterReceiver(it) } }
     nightWatch.removeCallbacks(nightWatchTick)

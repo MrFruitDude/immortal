@@ -245,7 +245,12 @@ class HomeActivity : ComponentActivity() {
   }
 
   companion object {
-    @Volatile private var foreground: java.lang.ref.WeakReference<HomeActivity>? = null
+    @Volatile private var foreground: java.lang.ref.WeakReference<android.app.Activity>? = null
+
+    /** The night screen ([PhotoFramePreviewActivity]) registers itself too, so it can be captured. */
+    fun setForeground(a: android.app.Activity?) {
+      foreground = a?.let { java.lang.ref.WeakReference(it) }
+    }
 
     /**
      * PNG of the home screen as Immortal draws it (only its own window — never other apps or the
