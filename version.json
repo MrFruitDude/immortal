@@ -1,6 +1,6 @@
 {
-  "versionCode": 74,
-  "versionName": "1.80",
+  "versionCode": 75,
+  "versionName": "1.81",
   "apkUrl": "https://github.com/MrFruitDude/immortal/releases/latest/download/immortal.apk",
-  "notes": "Installs report the right result: a late confirm from an earlier install no longer counts as the current one, and timed-out installs are cancelled."
+  "notes": "New widget dashboard home screen (time, weather, music, thermostats, lights) - switch in Immortal settings > Home screen. Daylight brightness follows the sun (Immortal settings > Display). Alfred plays music on the whole home unless you name a room. Smoother and lighter: less background work while music plays, right-sized screensaver photos, shared weather cache."
 }
