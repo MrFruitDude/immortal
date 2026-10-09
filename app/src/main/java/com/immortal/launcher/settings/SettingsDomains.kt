@@ -34,6 +34,7 @@ import com.immortal.launcher.ScreensaverDismissAppActivity
 import com.immortal.launcher.ScreensaverSourcesActivity
 import com.immortal.launcher.BrightnessSchedule
 import com.immortal.launcher.ImmortalSettings
+import com.immortal.launcher.GlassStage
 import com.immortal.launcher.SystemSounds
 import com.immortal.launcher.MqttConfig
 import com.immortal.launcher.MqttService
@@ -784,6 +785,8 @@ object SettingsDomains {
           onApplied = { c, keys ->
             if ("hideStatusBar" in keys) SettingsGuard.applyStatusBar(c)
             if ("portalPresence" in keys) PortalPresenceDetector.sync(c)
+            // Re-picking a style gives liquid glass another try after a recorded GL failure.
+            if ("dashboardStyle" in keys) runCatching { GlassStage.resetGuard(c) }
             if (keys.any { it.startsWith("brightness") }) {
               BrightnessSchedule.reschedule(c)
               // Turning it on without the "Modify system settings" grant: open the grant screen.
