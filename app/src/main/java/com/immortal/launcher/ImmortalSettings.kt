@@ -52,6 +52,24 @@ object ImmortalSettings {
   const val CLOCK_12 = "12" // force 12-hour (e.g. 1:05, 1 PM)
   const val CLOCK_24 = "24" // force 24-hour (e.g. 13:05, 13)
 
+  // What the Portal TV remote's branded app buttons do once remapped (see RemoteKeyService).
+  const val KEY_ACTION_NONE = "none" // leave the key alone (default)
+  const val KEY_ACTION_MIC_MUTE = "mic_mute" // toggle the software microphone mute
+  const val KEY_ACTION_HOME = "home"
+  const val KEY_ACTION_SCREENSAVER = "screensaver"
+  const val KEY_ACTION_SCREEN_OFF = "screen_off"
+  const val KEY_ACTION_BACK = "back"
+
+  val KEY_ACTIONS =
+      listOf(
+          KEY_ACTION_NONE,
+          KEY_ACTION_MIC_MUTE,
+          KEY_ACTION_HOME,
+          KEY_ACTION_SCREENSAVER,
+          KEY_ACTION_SCREEN_OFF,
+          KEY_ACTION_BACK,
+      )
+
   data class Settings(
       val weatherUnit: String = UNIT_AUTO,
       val tileSize: String = SIZE_STANDARD,
@@ -104,6 +122,18 @@ object ImmortalSettings {
       // Log the glass stage's average frame time every 10 s (logcat tag ImmortalGlass), for
       // checking its cost on real hardware. Off by default.
       val glassFrameLog: Boolean = false,
+      // Portal TV remote button remapping (RemoteKeyService). Off until the user turns it on and
+      // enables the service in Accessibility settings; the per-button actions default to "none"
+      // so enabling the service alone changes nothing.
+      val remoteKeysEnabled: Boolean = false,
+      val progRedAction: String = KEY_ACTION_NONE, // Netflix button
+      val progGreenAction: String = KEY_ACTION_NONE, // Amazon Prime button
+      val progBlueAction: String = KEY_ACTION_NONE, // Facebook Watch button
+      // The remote's voice button (Meta's firmware calls it BUTTON_VOICE; their help page says
+      // only "press for voice input"). It sends SEARCH, because it opened Portal's voice
+      // assistant, which is gone. Unlike the PROG_* keys this one is a standard Android key, so
+      // remapping it stops apps receiving SEARCH — hence opt-in like the rest.
+      val searchAction: String = KEY_ACTION_NONE,
   )
 
   private fun prefs(c: Context) = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -133,6 +163,11 @@ object ImmortalSettings {
         homeMode = p.getString("home_mode", HOME_APPS) ?: HOME_APPS,
         dashboardStyle = p.getString("dashboard_style", DASH_CLASSIC) ?: DASH_CLASSIC,
         glassFrameLog = p.getBoolean("glass_frame_log", false),
+        remoteKeysEnabled = p.getBoolean("remote_keys_enabled", false),
+        progRedAction = p.getString("prog_red_action", KEY_ACTION_NONE) ?: KEY_ACTION_NONE,
+        progGreenAction = p.getString("prog_green_action", KEY_ACTION_NONE) ?: KEY_ACTION_NONE,
+        progBlueAction = p.getString("prog_blue_action", KEY_ACTION_NONE) ?: KEY_ACTION_NONE,
+        searchAction = p.getString("search_action", KEY_ACTION_NONE) ?: KEY_ACTION_NONE,
     )
   }
 
@@ -189,6 +224,21 @@ object ImmortalSettings {
 
   fun setMaPassword(c: Context, v: String) = prefs(c).edit().putString("ma_password", v).apply()
 
+  fun setRemoteKeysEnabled(c: Context, on: Boolean) =
+      prefs(c).edit().putBoolean("remote_keys_enabled", on).apply()
+
+  fun setProgRedAction(c: Context, v: String) =
+      prefs(c).edit().putString("prog_red_action", v).apply()
+
+  fun setProgGreenAction(c: Context, v: String) =
+      prefs(c).edit().putString("prog_green_action", v).apply()
+
+  fun setProgBlueAction(c: Context, v: String) =
+      prefs(c).edit().putString("prog_blue_action", v).apply()
+
+  fun setSearchAction(c: Context, v: String) =
+      prefs(c).edit().putString("search_action", v).apply()
+
   fun setWeatherUnit(c: Context, unit: String) =
       prefs(c).edit().putString("weather_unit", unit).apply()
 
@@ -238,6 +288,48 @@ object ImmortalSettings {
 
   fun setGlassFrameLog(c: Context, on: Boolean) =
       prefs(c).edit().putBoolean("glass_frame_log", on).apply()
+
+  /**
+   * Custom display names for world-clock zones, keyed by IANA id ("Pacific/Auckland" → "Mum's").
+   * Only renamed zones appear; anything absent falls back to the city from the id. Stored as JSON
+   * because a label can contain a comma, which the zone list's own CSV format can't survive.
+   */
+  fun worldClockLabels(c: Context): Map<String, String> =
+      parseWorldClockLabels(prefs(c).getString("world_clock_labels", null))
+
+  /** Rename [zone], or clear the custom name when [label] is blank. */
+  fun setWorldClockLabel(c: Context, zone: String, label: String) {
+    val next = worldClockLabels(c).toMutableMap()
+    val trimmed = label.trim()
+    if (trimmed.isEmpty()) next.remove(zone) else next[zone] = trimmed
+    prefs(c).edit().putString("world_clock_labels", encodeWorldClockLabels(next)).apply()
+  }
+
+  /**
+   * Read the stored label map. Forgiving by design: unset, empty and malformed all mean "no custom
+   * names", because a broken pref should cost you your labels, not your clocks.
+   */
+  fun parseWorldClockLabels(raw: String?): Map<String, String> {
+    if (raw.isNullOrBlank()) return emptyMap()
+    return runCatching {
+          val o = org.json.JSONObject(raw)
+          o.keys()
+              .asSequence()
+              .mapNotNull { k -> o.optString(k).trim().takeIf { it.isNotEmpty() }?.let { k to it } }
+              .toMap()
+        }
+        .getOrDefault(emptyMap())
+  }
+
+  fun encodeWorldClockLabels(labels: Map<String, String>): String =
+      org.json.JSONObject(labels as Map<*, *>).toString()
+
+  /** The name to show for [zone]: the user's own, else the city from the IANA id. */
+  fun worldClockDisplayName(c: Context, zone: String): String =
+      worldClockLabels(c)[zone] ?: cityFromZoneId(zone)
+
+  /** "America/New_York" → "New York". */
+  fun cityFromZoneId(zone: String): String = zone.substringAfterLast('/').replace('_', ' ')
 
   fun setShowMiniPlayer(c: Context, on: Boolean) =
       prefs(c).edit().putBoolean("show_mini_player", on).apply()
