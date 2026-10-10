@@ -1,6 +1,6 @@
 {
-  "versionCode": 76,
-  "versionName": "1.82",
+  "versionCode": 77,
+  "versionName": "1.83",
   "apkUrl": "https://github.com/MrFruitDude/immortal/releases/latest/download/immortal.apk",
-  "notes": "Hands-free Alfred: say Hey Alfred and he answers in a small popover with a glowing edge, keeps listening for follow-ups and ends the conversation himself. Dashboard: live weather sky, a richer weather card, album art for what's playing, Hue scenes, and your Home Assistant thermostats (Hilo) and lights. New Connect your smart home screen (Home Assistant sign-in on the Portal, Hue pairing). Night screen: a dim clock with light buttons for the overnight window."
+  "notes": "Fixes a screensaver crash that could make Home show the Select Home app chooser. New: an Energy card (your home's power from Hilo, D\u00e9fi Hilo, and the Qu\u00e9bec grid's demand and hydro/wind mix), Alfred's voice can be chosen (Settings > Muse > Voice), an optional Liquid glass dashboard style, and the Lights card no longer gets cut off."
 }
