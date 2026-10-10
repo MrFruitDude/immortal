@@ -68,7 +68,7 @@ internal object GlassStage {
   private const val TAG = "ImmortalGlass"
 
   /** GL buffer scale against the view: half resolution, upscaled by the TextureView for free. */
-  const val RENDER_SCALE = 0.5f
+  const val RENDER_SCALE = 0.75f
 
   /** Give up (for this visit) if GL hasn't put frames on screen this long after resuming. */
   private const val FIRST_FRAME_TIMEOUT_MS = 4_000L

@@ -541,46 +541,58 @@ private fun LightsCard(snap: HomeControls.Snapshot, modifier: Modifier, onChange
           fontSize = 14.sp)
       return@DashCard
     }
-    val rows = snap.lights.chunked(2)
-    Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-      if (snap.scenes.isNotEmpty()) SceneChips(snap, onChanged)
-      rows.forEach { pair ->
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-          pair.forEach { light ->
-            val on = flipped[light.id] ?: light.on
-            Row(
-                Modifier.weight(1f)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(if (on) Color(0xFFF4F1E8) else Color(0x14FFFFFF))
-                    .tvFocusable(RoundedCornerShape(18.dp)) {
-                      flipped[light.id] = !on
-                      scope.launch {
-                        withContext(Dispatchers.IO) { runCatching { HomeControls.toggle(context, light.copy(on = on)) } }
-                        delay(1500)
-                        flipped.remove(light.id)
-                        onChanged()
-                      }
+    // When the card is tall enough, rooms sit in a two-column grid; when it's short (music playing
+    // on a portrait Mini), they become one row of pills you swipe sideways, so nothing is cut off.
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+      val sceneRow = if (snap.scenes.isNotEmpty()) 56 else 0
+      val gridRows = (snap.lights.size + 1) / 2
+      val grid = maxHeight.value >= sceneRow + gridRows * 70
+      Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (snap.scenes.isNotEmpty()) SceneChips(snap, onChanged)
+        val tile: @Composable (HomeControls.Light, Modifier) -> Unit = { light, m ->
+          val on = flipped[light.id] ?: light.on
+          Row(
+              m.clip(RoundedCornerShape(18.dp))
+                  .background(if (on) Color(0xFFF4F1E8) else Color(0x14FFFFFF))
+                  .tvFocusable(RoundedCornerShape(18.dp)) {
+                    flipped[light.id] = !on
+                    scope.launch {
+                      withContext(Dispatchers.IO) { runCatching { HomeControls.toggle(context, light.copy(on = on)) } }
+                      delay(1500)
+                      flipped.remove(light.id)
+                      onChanged()
                     }
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                  Glyph(GLYPH_BULB, 26.dp, if (on) Warm else Muted)
-                  Spacer(Modifier.width(10.dp))
-                  Column {
-                    Text(
-                        light.name,
-                        color = if (on) Color(0xFF16161A) else Color.White,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis)
-                    Text(
-                        if (!on) "Off" else light.brightness?.let { "$it%" } ?: "On",
-                        color = if (on) Color(0xFF55555E) else Muted,
-                        fontSize = 12.sp)
                   }
+                  .padding(horizontal = 14.dp, vertical = 12.dp),
+              verticalAlignment = Alignment.CenterVertically) {
+                Glyph(GLYPH_BULB, 26.dp, if (on) Warm else Muted)
+                Spacer(Modifier.width(10.dp))
+                Column {
+                  Text(
+                      light.name,
+                      color = if (on) Color(0xFF16161A) else Color.White,
+                      fontSize = 15.sp,
+                      fontWeight = FontWeight.Medium,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis)
+                  Text(
+                      if (!on) "Off" else light.brightness?.let { "$it%" } ?: "On",
+                      color = if (on) Color(0xFF55555E) else Muted,
+                      fontSize = 12.sp)
                 }
+              }
+        }
+        if (grid) {
+          snap.lights.chunked(2).forEach { pair ->
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+              pair.forEach { tile(it, Modifier.weight(1f)) }
+              if (pair.size == 1) Spacer(Modifier.weight(1f))
+            }
           }
-          if (pair.size == 1) Spacer(Modifier.weight(1f))
+        } else {
+          Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            snap.lights.forEach { tile(it, Modifier.width(168.dp)) }
+          }
         }
       }
     }

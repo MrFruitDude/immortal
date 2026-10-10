@@ -79,6 +79,16 @@ class PhotoFrameController(
     private val calendarRefreshMs: Long = 30 * 60_000L,
 ) {
   private val io = Executors.newSingleThreadExecutor()
+
+  /**
+   * Run [task] on [io] unless the frame has been stopped: a slide change or album refresh posted to
+   * the UI thread can still land after [stop] shut the executor down, and an uncaught
+   * RejectedExecutionException there takes the whole launcher down with it.
+   */
+  private fun bg(task: () -> Unit) {
+    if (io.isShutdown) return
+    runCatching { io.execute(task) }
+  }
   // A separate single-thread executor for caption work (EXIF read + the reverse-geocode
   // network call), so an 8s geocode lookup can never stall the image-decode pipeline on [io].
   private val metaIo = Executors.newSingleThreadExecutor()
@@ -342,7 +352,7 @@ class PhotoFrameController(
         startWebPage(source.url)
       }
       is PhotoFrameSource.Folder -> {
-        io.execute {
+        bg {
           val list =
               if (LocalMedia.isAccessible(source.path)) LocalMedia.enumerate(source.path, source.includeVideo)
               else emptyList()
@@ -361,7 +371,7 @@ class PhotoFrameController(
       }
       is PhotoFrameSource.SharedAlbum -> {
         val m = context.resources.displayMetrics
-        io.execute {
+        bg {
           val album = RemoteAlbum.fetch(source.url, m.widthPixels, m.heightPixels)
           val urls = album?.photoUrls.orEmpty()
           ui.post {
@@ -389,7 +399,7 @@ class PhotoFrameController(
                   ?.map { CachePool.Entry(it.url, it.isVideo) }
             }
         if (pooled) return
-        io.execute {
+        bg {
           val media =
               ImmichSource.listMedia(source.url, source.key, source.albumId, source.includeVideo)
                   .orEmpty()
@@ -420,7 +430,7 @@ class PhotoFrameController(
                   ?.map { CachePool.Entry(it.url, it.isVideo) }
             }
         if (pooled) return
-        io.execute {
+        bg {
           val media =
               DavSource.listMedia(source.url, source.user, source.pass, source.includeVideo)
                   .orEmpty()
@@ -449,7 +459,7 @@ class PhotoFrameController(
                 user = source.user,
                 password = source.pass,
             )
-        io.execute {
+        bg {
           val paths = if (src.connect()) src.listImages() else emptyList()
           ui.post {
             if (paths.isNotEmpty()) {
@@ -994,7 +1004,7 @@ class PhotoFrameController(
     dashWeather.visibility = if (weatherText.isNotBlank()) View.VISIBLE else View.GONE
     dashEvent.visibility = View.GONE
     dashAlmanac.visibility = View.GONE
-    io.execute {
+    bg {
       val lines = buildList {
         runCatching { CalendarPacks.headerLines(context) }.getOrDefault(emptyList()).forEach { add(it) }
         val q = DailyContent.quoteOfDay()
@@ -1008,7 +1018,7 @@ class PhotoFrameController(
         }
       }
     }
-    io.execute {
+    bg {
       val ev = runCatching {
         if (CalendarHelper.hasPermission(context)) CalendarHelper.upcoming(context).firstOrNull() else null
       }.getOrNull()
@@ -1045,7 +1055,7 @@ class PhotoFrameController(
       }
 
   private fun fetchWeather() {
-    io.execute {
+    bg {
       // Shared resilient fetch: cached location + multi-provider geolocation.
       val w = Weather.fetch(context)
       if (w.isNotBlank()) weatherText = w
@@ -1101,7 +1111,7 @@ class PhotoFrameController(
           }
           val url = settings.calendarUrl
           if (settings.usesCalendar && !url.isNullOrBlank()) {
-            io.execute {
+            bg {
               val events = CalendarFeed.fetch(url)
               ui.post {
                 calendarEvents = events
@@ -1154,7 +1164,7 @@ class PhotoFrameController(
 
   private fun showLocalImage(path: String, g: Int) {
     stopVideo()
-    io.execute {
+    bg {
       val bmp = runCatching { decodeCorrected(path) }.getOrNull()
       ui.post {
         if (g != gen) return@post // superseded by a newer advance
@@ -1322,7 +1332,7 @@ class PhotoFrameController(
           val shareUrl = settings.albumUrl
           if (shareUrl.isNullOrBlank()) return
           val m = context.resources.displayMetrics
-          io.execute {
+          bg {
             val fresh = RemoteAlbum.fetch(shareUrl, m.widthPixels, m.heightPixels)
             val urls = fresh?.photoUrls.orEmpty()
             ui.post {
@@ -1373,7 +1383,7 @@ class PhotoFrameController(
       return
     }
     stopVideo()
-    io.execute {
+    bg {
       val bmp = runCatching { fetchRemoteImage(url) }.getOrNull()
       ui.post {
         if (g != gen) return@post // superseded by a newer advance
@@ -1488,7 +1498,7 @@ class PhotoFrameController(
     remoteReresolving = true
     remoteReresolveStreak++
     val m = context.resources.displayMetrics
-    io.execute {
+    bg {
       val fresh = RemoteAlbum.fetch(shareUrl, m.widthPixels, m.heightPixels)
       val urls = fresh?.photoUrls.orEmpty()
       ui.post {
@@ -1516,7 +1526,7 @@ class PhotoFrameController(
     remoteVideos = emptySet()
     remoteFetch = null
     poolLive = false
-    smbSource?.let { s -> io.execute { runCatching { s.close() } } }
+    smbSource?.let { s -> bg { runCatching { s.close() } } }
     smbSource = null
     ui.removeCallbacks(remoteTick)
     ui.removeCallbacks(remoteRefresh)
@@ -1544,8 +1554,8 @@ class PhotoFrameController(
   }
 
   private fun loadFresh() {
-    io.execute {
-      val bmp = fetchWebPhoto() ?: return@execute
+    bg {
+      val bmp = fetchWebPhoto() ?: return@bg
       ui.post {
         photo.visibility = View.VISIBLE
         if (history.size >= 6) history.removeAt(0) // cap memory; GC reclaims
@@ -2168,7 +2178,7 @@ class PhotoFrameController(
     poolLister = lister
     poolShuffle = shuffle
     remoteHeaders = headers
-    io.execute {
+    bg {
       val p = CachePool.load(cache.poolFile(), key)
       p.reconcile(cache) // drop missing entries; delete a previous source's files
       val resident = p.snapshot()

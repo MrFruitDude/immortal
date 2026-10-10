@@ -220,7 +220,9 @@ void main() {
   float ds = sdRound(p + vec2(0.0, 3.0 * uUnit), uBox.zw, uRadius);
   float shadow = (1.0 - smoothstep(-2.0 * uUnit, 12.0 * uUnit, ds)) * 0.26;
 
-  float cover = clamp(0.5 - d, 0.0, 1.0);   // 1-px antialiased edge
+  // Antialias across ~1.5 buffer pixels (the buffer is upscaled to the screen, so a 1-px edge
+  // reads as stair-steps on the corners).
+  float cover = clamp(0.5 - d / 1.5, 0.0, 1.0);
   if (cover <= 0.0) {
     gl_FragColor = vec4(0.0, 0.0, 0.0, shadow);
     return;
@@ -257,7 +259,9 @@ void main() {
   // Light from the top-left.
   vec2 L = normalize(vec2(-0.55, 0.84));
   float facing = dot(n, L);
-  float edge = 1.0 - smoothstep(0.0, 1.8 * uUnit, -d);
+  // The rim highlight fades in from the very edge and out over ~2.5 units, so it reads as a smooth
+  // light catch rather than a hard 1-2 px line on the curves.
+  float edge = smoothstep(-0.6, 0.6, -d) * (1.0 - smoothstep(0.4 * uUnit, 2.8 * uUnit, -d));
   float spec = edge * (0.22 + 0.78 * max(facing, 0.0)) + edge * 0.22 * max(-facing, 0.0);
   float sheen = (1.0 - smoothstep(0.0, rim * 1.6, -d)) * max(facing, 0.0) * 0.10;
   // A faint highlight band across the top of the glass.
